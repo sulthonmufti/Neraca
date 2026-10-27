@@ -29,20 +29,20 @@ backend/
 
 ### Backend
 
-| Component   | Choice          |
-|-------------|-----------------|
-| Language    | PHP 8.3+        |
-| Framework   | Laravel 13      |
-| Database    | PostgreSQL 16   |
-| Cache/Queue | Redis           |
-| Web Server  | Nginx (Alpine)  |
+| Component   | Choice         |
+|-------------|----------------|
+| Language    | PHP 8.4        |
+| Framework   | Laravel 13     |
+| Database    | PostgreSQL 16  |
+| Cache/Queue | Redis          |
+| Web Server  | Nginx (Alpine) |
 
 ### Infrastructure
 
-| Component       | Choice          |
-|-----------------|-----------------|
-| Containerization| Docker Compose  |
-| Environments    | Local, Staging, Production |
+| Component        | Choice                     |
+|------------------|----------------------------|
+| Containerization | Docker Compose             |
+| Environments     | Local, Staging, Production |
 
 ---
 
@@ -62,9 +62,10 @@ backend/
    cd Neraca
    ```
 
-2. Copy the environment file
+2. Copy the environment files
 
    ```bash
+   cp .env.example .env
    cp backend/.env.example backend/.env
    ```
 
@@ -88,13 +89,33 @@ backend/
 
 The application will be available at `http://localhost:8000`.
 
+### Verify Containers are Running
+
+```bash
+docker compose ps
+```
+
+All four containers should have a status of `Up`: `neraca_app`, `neraca_webserver`, `neraca_db`, and `neraca_redis`.
+
+### Stop the Containers
+
+```bash
+docker compose down
+```
+
+To stop and remove all data volumes as well (this will delete the database):
+
+```bash
+docker compose down -v
+```
+
 ### Ports
 
-| Service    | Port   |
-|------------|--------|
-| Web (Nginx)| `8000` |
-| PostgreSQL | `5432` |
-| Redis      | `6379` |
+| Service     | Port   |
+|-------------|--------|
+| Web (Nginx) | `8000` |
+| PostgreSQL  | `5433` |
+| Redis       | `6379` |
 
 ---
 
@@ -102,9 +123,11 @@ The application will be available at `http://localhost:8000`.
 
 ```
 Neraca/
-├── backend/           # Laravel application
-├── docker/            # Docker configuration (Nginx, etc.)
+├── backend/            # Laravel application
+├── docker/             # Docker configuration (Nginx, etc.)
 ├── docker-compose.yml
+├── Dockerfile
+├── .env.example
 ├── .gitignore
 └── README.md
 ```
