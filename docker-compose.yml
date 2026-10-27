@@ -33,11 +33,11 @@ services:
     container_name: neraca_db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: neraca_db
-      POSTGRES_USER: neraca_user
-      POSTGRES_PASSWORD: neraca_password
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
