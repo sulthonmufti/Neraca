@@ -2,21 +2,56 @@
 
 namespace App\Modules\Sales\Services;
 
+use App\Modules\Cash\Models\Shift;
+use App\Modules\Cash\Services\RecordCashMovementService;
+use App\Modules\Core\Models\PaymentMethod;
 use App\Modules\Sales\Models\ReceiptCounter;
 use App\Modules\Sales\Models\Sale;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class CreateSaleService
 {
+    protected RecordCashMovementService $recordCashMovementService;
+
+    public function __construct(RecordCashMovementService $recordCashMovementService)
+    {
+        $this->recordCashMovementService = $recordCashMovementService;
+    }
+
     public function execute(array $data, int $cashierId, int $tenantId): Sale
     {
         return DB::transaction(function () use ($data, $cashierId, $tenantId) {
             $outletId = $data['outlet_id'];
             $today = Carbon::now('Asia/Jakarta')->toDateString();
 
-            // 1. Generate Nomor Struk Atomik Harian per Outlet
+            //Cari Shift Aktif (Berdasarkan shift_id dari request atau shift open milik kasir di outlet ini)
+            /** @var Shift|null $shift */
+            $shift = null;
+            if (!empty($data['shift_id'])) {
+                /** @var Shift|null $shift */
+                $shift = Shift::where('id', $data['shift_id'])
+                    ->where('outlet_id', $outletId)
+                    ->where('status', 'open')
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$shift) {
+                    throw new HttpException(422, 'Shift yang dipilih tidak ditemukan atau sudah ditutup.');
+                }
+            } else {
+                /** @var Shift|null $shift */
+                $shift = Shift::where('outlet_id', $outletId)
+                    ->where('user_id', $cashierId)
+                    ->where('status', 'open')
+                    ->lockForUpdate()
+                    ->first();
+            }
+
+            //Generate Nomor Struk Atomik Harian per Outlet
+            /** @var ReceiptCounter $counter */
             $counter = ReceiptCounter::lockForUpdate()->firstOrCreate(
                 ['outlet_id' => $outletId, 'counter_date' => $today],
                 ['last_number' => 0]
@@ -24,7 +59,7 @@ class CreateSaleService
             $counter->increment('last_number');
             $receiptNo = sprintf('INV-%s-%05d', str_replace('-', '', $today), $counter->last_number);
 
-            // 2. Hitung Total & Grand Total dari Payload
+            //Total & Grand Total dari Payload
             $subtotal = 0;
             $itemsData = [];
 
@@ -57,7 +92,7 @@ class CreateSaleService
             $rounding = $data['rounding'] ?? 0;
 
             $grandTotal = ($subtotal - $discountTotal) + $taxTotal + $serviceTotal + $rounding;
-            
+
             $paidTotal = 0;
             foreach ($data['payments'] as $payment) {
                 $paidTotal += $payment['amount'];
@@ -65,12 +100,12 @@ class CreateSaleService
 
             $changeTotal = max(0, $paidTotal - $grandTotal);
 
-            // 3. Simpan Header Transaksi (Sales)
+            //Simpan Header Transaksi (Sales)
             $sale = Sale::create([
                 'uuid' => $data['uuid'] ?? (string) Str::uuid(),
                 'tenant_id' => $tenantId,
                 'outlet_id' => $outletId,
-                'shift_id' => $data['shift_id'] ?? null,
+                'shift_id' => $shift?->id,
                 'receipt_no' => $receiptNo,
                 'cashier_id' => $cashierId,
                 'member_id' => $data['member_id'] ?? null,
@@ -89,13 +124,19 @@ class CreateSaleService
                 'sold_at' => $data['sold_at'] ?? now(),
             ]);
 
-            // 4. Simpan Sale Items
+            //Simpan Sale Items
             foreach ($itemsData as &$itemRecord) {
                 $itemRecord['sale_id'] = $sale->id;
             }
             DB::table('sale_items')->insert($itemsData);
 
-            // 5. Simpan Sale Payments (Split Payment Support)
+            //Simpan Sale Payments & Hitung Aliran Kas Shift
+            $paymentMethodIds = collect($data['payments'])->pluck('payment_method_id')->unique();
+            $paymentMethods = PaymentMethod::whereIn('id', $paymentMethodIds)->get()->keyBy('id');
+
+            $cashReceived = 0;
+            $nonCashTotal = 0;
+
             foreach ($data['payments'] as $payment) {
                 $sale->payments()->create([
                     'payment_method_id' => $payment['payment_method_id'],
@@ -105,6 +146,35 @@ class CreateSaleService
                     'paid_at' => now(),
                     'gateway_payload' => $payment['gateway_payload'] ?? null,
                 ]);
+
+                $method = $paymentMethods->get($payment['payment_method_id']);
+                if ($method && $method->type === 'cash') {
+                    $cashReceived += $payment['amount'];
+                } else {
+                    $nonCashTotal += $payment['amount'];
+                }
+            }
+
+            //Jika ada Shift Aktif, catat Ledger Cash Movement & Non-Cash Sales
+            if ($shift) {
+                // Uang tunai bersih yang tinggal di laci = Uang tunai diterima - Kembalian
+                $netCash = max(0, $cashReceived - $changeTotal);
+
+                if ($netCash > 0) {
+                    $this->recordCashMovementService->execute(
+                        $shift->id,
+                        'sale_cash',
+                        $netCash,
+                        "Penjualan Tunai #{$sale->receipt_no}",
+                        $cashierId,
+                        $sale->id,
+                        'sale'
+                    );
+                }
+
+                if ($nonCashTotal > 0) {
+                    $shift->increment('total_non_cash_sales', $nonCashTotal);
+                }
             }
 
             return $sale->load(['items', 'payments', 'cashier']);
