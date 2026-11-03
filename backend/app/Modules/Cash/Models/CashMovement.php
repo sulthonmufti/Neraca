@@ -14,6 +14,7 @@ class CashMovement extends Model
         'amount',
         'category',
         'reason',
+        'sale_id',
         'user_id',
     ];
 

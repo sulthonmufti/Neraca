@@ -62,11 +62,13 @@ return new class extends Migration
             $table->bigInteger('amount');
             $table->string('category', 50)->nullable();
             $table->text('reason');
+            $table->foreignId('sale_id')->nullable()->constrained('sales')->restrictOnDelete();
             $table->foreignId('user_id')->constrained('users')->restrictOnDelete();
 
             $table->timestampsTz();
 
             $table->index('shift_id');
+            $table->index('sale_id');
         });
     }
 

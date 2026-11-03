@@ -5,6 +5,7 @@ namespace App\Modules\Cash\Http\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\Cash\Services\CloseShiftService;
 use App\Modules\Cash\Services\OpenShiftService;
+use App\Modules\Cash\Services\RecordCashMovementService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -13,11 +14,16 @@ class CashController extends Controller
 {
     protected OpenShiftService $openShiftService;
     protected CloseShiftService $closeShiftService;
+    protected RecordCashMovementService $recordCashMovementService;
 
-    public function __construct(OpenShiftService $openShiftService, CloseShiftService $closeShiftService)
-    {
+    public function __construct(
+        OpenShiftService $openShiftService,
+        CloseShiftService $closeShiftService,
+        RecordCashMovementService $recordCashMovementService
+    ) {
         $this->openShiftService = $openShiftService;
         $this->closeShiftService = $closeShiftService;
+        $this->recordCashMovementService = $recordCashMovementService;
     }
 
     public function openShift(Request $request): JsonResponse
@@ -26,6 +32,7 @@ class CashController extends Controller
             'outlet_id' => 'required|exists:outlets,id',
             'register_id' => 'required|exists:registers,id',
             'opening_cash' => 'required|integer|min:0',
+            'note' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -48,6 +55,47 @@ class CashController extends Controller
                 'success' => true,
                 'message' => 'Shift berhasil dibuka',
                 'data' => $shift,
+            ], 201);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 400);
+        }
+    }
+
+    public function storeMovement(Request $request, int $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'type' => 'required|in:cash_in,cash_out',
+            'amount' => 'required|integer|min:1',
+            'category' => 'nullable|string|max:50',
+            'reason' => 'required|string|max:255',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi mutasi kas gagal',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            $movement = $this->recordCashMovementService->execute(
+                $id,
+                $request->input('type'),
+                $request->input('amount'),
+                $request->input('reason'),
+                $request->user()->id,
+                null,
+                $request->input('category')
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Mutasi kas berhasil dicatat',
+                'data' => $movement,
             ], 201);
         } catch (\Exception $e) {
             return response()->json([
