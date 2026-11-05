@@ -53,14 +53,16 @@ class RecordStockMovementService
                 ->first();
 
             if (!$stockLevel) {
-                $stockLevel = StockLevel::create([
+                DB::table('stock_levels')->insertOrIgnore([
                     'outlet_id' => $outletId,
                     'variant_id' => $variantId,
                     'qty' => 0,
                     'reorder_point' => 0,
+                    'created_at' => now(),
+                    'updated_at' => now(),
                 ]);
-                
-                // Kunci kembali setelah dibuat
+
+                /** @var StockLevel $stockLevel */
                 $stockLevel = StockLevel::where('outlet_id', $outletId)
                     ->where('variant_id', $variantId)
                     ->lockForUpdate()
@@ -72,8 +74,10 @@ class RecordStockMovementService
 
             // Validasi stok minimum jika stok menjadi minus (kecuali diizinkan oleh pengaturan sistem)
             if ($newQty < 0) {
-                // Untuk tahap awal, kita bisa berikan exception jika stok tidak mencukupi
-                throw new HttpException(422, "Stok tidak mencukupi untuk varian ID {$variantId}. Stok saat ini: {$currentQty}, diminta: " . abs($qtyChange));
+                throw new HttpException(
+                    422,
+                    "Stok tidak mencukupi untuk varian ID {$variantId}. Stok saat ini: {$currentQty}, diminta: " . abs($qtyChange)
+                );
             }
 
             //Tulis ke ledger append-only (stock_movements)
@@ -91,10 +95,14 @@ class RecordStockMovementService
                 'created_at' => now(),
             ]);
 
-            //Perbarui cache di tabel stock_levels
-            $stockLevel->update([
-                'qty' => $newQty,
-            ]);
+            //Perbarui cache di tabel stock_levels menggunakan composite key
+            DB::table('stock_levels')
+                ->where('outlet_id', $outletId)
+                ->where('variant_id', $variantId)
+                ->update([
+                    'qty' => $newQty,
+                    'updated_at' => now(),
+                ]);
 
             return $movement;
         });
