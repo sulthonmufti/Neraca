@@ -3,15 +3,15 @@
 namespace App\Modules\Sales\Models;
 
 use App\Models\User;
+use App\Modules\Cash\Models\Shift;
 use App\Modules\Core\Models\Outlet;
-use App\Modules\Core\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Sale extends Model
 {
-    use BelongsToTenant;
+    protected $table = 'sales';
 
     protected $fillable = [
         'uuid',
@@ -61,6 +61,11 @@ class Sale extends Model
         return $this->belongsTo(Outlet::class);
     }
 
+    public function shift(): BelongsTo
+    {
+        return $this->belongsTo(Shift::class, 'shift_id');
+    }
+
     public function cashier(): BelongsTo
     {
         return $this->belongsTo(User::class, 'cashier_id');
@@ -69,11 +74,6 @@ class Sale extends Model
     public function items(): HasMany
     {
         return $this->hasMany(SaleItem::class, 'sale_id');
-    }
-
-    public function discounts(): HasMany
-    {
-        return $this->hasMany(SaleDiscount::class, 'sale_id');
     }
 
     public function payments(): HasMany
