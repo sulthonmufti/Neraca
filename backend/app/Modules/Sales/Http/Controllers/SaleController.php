@@ -4,6 +4,7 @@ namespace App\Modules\Sales\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Sales\Services\CreateSaleService;
+use App\Modules\Sales\Services\ReturnSaleService;
 use App\Modules\Sales\Services\VoidSaleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,13 +14,16 @@ class SaleController extends Controller
 {
     protected CreateSaleService $createSaleService;
     protected VoidSaleService $voidSaleService;
+    protected ReturnSaleService $returnSaleService;
 
     public function __construct(
         CreateSaleService $createSaleService,
-        VoidSaleService $voidSaleService
+        VoidSaleService $voidSaleService,
+        ReturnSaleService $returnSaleService
     ) {
         $this->createSaleService = $createSaleService;
         $this->voidSaleService = $voidSaleService;
+        $this->returnSaleService = $returnSaleService;
     }
 
     public function store(Request $request): JsonResponse
@@ -93,6 +97,44 @@ class SaleController extends Controller
                 'message' => 'Transaksi berhasil dibatalkan (void)',
                 'data' => $sale,
             ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 400);
+        }
+    }
+
+    public function returnSale(Request $request, int $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'reason' => 'required|string|max:255',
+            'refund_method_id' => 'required|exists:payment_methods,id',
+            'approved_by' => 'nullable|integer|exists:users,id',
+            'items' => 'required|array|min:1',
+            'items.*.sale_item_id' => 'required|exists:sale_items,id',
+            'items.*.qty' => 'required|numeric|min:0.001',
+            'items.*.amount' => 'nullable|integer|min:0',
+            'items.*.restock' => 'nullable|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi retur transaksi gagal',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            $user = $request->user();
+            $saleReturn = $this->returnSaleService->execute($id, $request->all(), $user->id);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Retur transaksi berhasil diproses',
+                'data' => $saleReturn,
+            ], 201);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
