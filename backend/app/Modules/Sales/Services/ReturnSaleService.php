@@ -7,6 +7,7 @@ use App\Modules\Cash\Services\RecordCashMovementService;
 use App\Modules\Catalog\Models\ProductVariant;
 use App\Modules\Core\Models\PaymentMethod;
 use App\Modules\Inventory\Services\RecordStockMovementService;
+use App\Modules\Sales\Models\ReturnCounter;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleReturn;
 use App\Modules\Sales\Models\SaleReturnItem;
@@ -90,10 +91,26 @@ class ReturnSaleService
                 ];
             }
 
-            // Generate Nomor Retur Unik
-            $today = Carbon::now('Asia/Jakarta')->format('Ymd');
-            $countToday = SaleReturn::whereDate('created_at', Carbon::today())->lockForUpdate()->count() + 1;
-            $returnNo = sprintf('RET-%s-%05d', $today, $countToday);
+            // Generate Nomor Retur Atomik Harian per Outlet menggunakan ReturnCounter
+            $today = Carbon::now('Asia/Jakarta')->toDateString();
+
+            // Pastikan baris counter hari ini tersedia tanpa race condition saat inisialisasi awal hari
+            DB::table('return_counters')->insertOrIgnore([
+                'outlet_id' => $sale->outlet_id,
+                'counter_date' => $today,
+                'last_number' => 0,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            /** @var ReturnCounter $counter */
+            $counter = ReturnCounter::where('outlet_id', $sale->outlet_id)
+                ->where('counter_date', $today)
+                ->lockForUpdate()
+                ->first();
+
+            $counter->increment('last_number');
+            $returnNo = sprintf('RET-%s-%05d', str_replace('-', '', $today), $counter->last_number);
 
             // 1. Simpan Header Sale Return
             $saleReturn = SaleReturn::create([
@@ -170,7 +187,6 @@ class ReturnSaleService
             /** @var PaymentMethod|null $refundMethod */
             $refundMethod = PaymentMethod::find($data['refund_method_id']);
             if ($refundMethod && $refundMethod->type === 'cash' && $refundTotal > 0) {
-                // Cari shift yang sedang open di outlet ini (milik kasir saat ini atau shift dari transaksi asal)
                 /** @var Shift|null $activeShift */
                 $activeShift = Shift::where('outlet_id', $sale->outlet_id)
                     ->where('status', 'open')
