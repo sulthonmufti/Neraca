@@ -8,6 +8,10 @@ Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     // Endpoint Transaksi Penjualan (Sales)
     Route::post('/sales', [SaleController::class, 'store']);
     Route::post('/sales/{id}/void', [SaleController::class, 'voidSale']);
+    Route::post('/sales/{id}/void', [SaleController::class, 'voidSale']);
+    Route::post('/sales/{id}/returns', [SaleController::class, 'returnSale']);
+    Route::get('/sales/hold', [SaleController::class, 'listHold']);
+    Route::post('/sales/{id}/pay', [SaleController::class, 'payHold']);
 
     // Endpoint Shift & Mutasi Kas (Cash)
     Route::post('/shifts/open', [CashController::class, 'openShift']);
