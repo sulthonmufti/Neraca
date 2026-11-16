@@ -29,15 +29,25 @@ class CreateSaleService
 
     public function execute(array $data, int $cashierId, int $tenantId): Sale
     {
-        return DB::transaction(function () use ($data, $cashierId, $tenantId) {
+        //Idempotency Check: Jika UUID sudah ada, kembalikan transaksi sebelumnya
+        $clientUuid = $data['uuid'] ?? (string) Str::uuid();
+        $existingSale = Sale::with(['items', 'payments', 'cashier'])
+            ->where('uuid', $clientUuid)
+            ->first();
+
+        if ($existingSale) {
+            return $existingSale;
+        }
+
+        return DB::transaction(function () use ($data, $clientUuid, $cashierId, $tenantId) {
             $outletId = $data['outlet_id'];
+            $isHold = ($data['status'] ?? 'completed') === 'hold';
             $today = Carbon::now('Asia/Jakarta')->toDateString();
 
-            //Cari Shift Aktif (Berdasarkan shift_id dari request atau shift open milik kasir di outlet ini)
+            //Cari Shift Aktif
             /** @var Shift|null $shift */
             $shift = null;
             if (!empty($data['shift_id'])) {
-                /** @var Shift|null $shift */
                 $shift = Shift::where('id', $data['shift_id'])
                     ->where('outlet_id', $outletId)
                     ->where('status', 'open')
@@ -48,7 +58,6 @@ class CreateSaleService
                     throw new HttpException(422, 'Shift yang dipilih tidak ditemukan atau sudah ditutup.');
                 }
             } else {
-                /** @var Shift|null $shift */
                 $shift = Shift::where('outlet_id', $outletId)
                     ->where('user_id', $cashierId)
                     ->where('status', 'open')
@@ -65,7 +74,7 @@ class CreateSaleService
             $counter->increment('last_number');
             $receiptNo = sprintf('INV-%s-%05d', str_replace('-', '', $today), $counter->last_number);
 
-            //Hitung Total & Grand Total dari Payload
+            //Hitung Total dari Items
             $subtotal = 0;
             $itemsData = [];
 
@@ -96,19 +105,20 @@ class CreateSaleService
             $taxTotal = $data['tax_total'] ?? 0;
             $serviceTotal = $data['service_total'] ?? 0;
             $rounding = $data['rounding'] ?? 0;
-
             $grandTotal = ($subtotal - $discountTotal) + $taxTotal + $serviceTotal + $rounding;
 
             $paidTotal = 0;
-            foreach ($data['payments'] as $payment) {
-                $paidTotal += $payment['amount'];
+            if (!$isHold && !empty($data['payments'])) {
+                foreach ($data['payments'] as $payment) {
+                    $paidTotal += $payment['amount'];
+                }
             }
 
             $changeTotal = max(0, $paidTotal - $grandTotal);
 
             //Simpan Header Transaksi (Sales)
             $sale = Sale::create([
-                'uuid' => $data['uuid'] ?? (string) Str::uuid(),
+                'uuid' => $clientUuid,
                 'tenant_id' => $tenantId,
                 'outlet_id' => $outletId,
                 'shift_id' => $shift?->id,
@@ -117,7 +127,7 @@ class CreateSaleService
                 'member_id' => $data['member_id'] ?? null,
                 'order_type' => $data['order_type'] ?? 'dine_in',
                 'table_id' => $data['table_id'] ?? null,
-                'status' => 'completed',
+                'status' => $isHold ? 'hold' : 'completed',
                 'subtotal' => $subtotal,
                 'discount_total' => $discountTotal,
                 'tax_total' => $taxTotal,
@@ -130,105 +140,122 @@ class CreateSaleService
                 'sold_at' => $data['sold_at'] ?? now(),
             ]);
 
-            //Simpan Sale Items
+            // 6. Simpan Sale Items
             foreach ($itemsData as &$itemRecord) {
                 $itemRecord['sale_id'] = $sale->id;
             }
             DB::table('sale_items')->insert($itemsData);
 
-            //Potong Stok & Catat Ledger Inventory (Urutkan variant_id menaik untuk mencegah deadlock)
-            $sortedItems = collect($data['items'])->sortBy('variant_id')->values();
-            $variantIds = $sortedItems->pluck('variant_id')->unique();
-
-            $variants = ProductVariant::with('product')
-                ->whereIn('id', $variantIds)
-                ->get()
-                ->keyBy('id');
-
-            $variantUnits = DB::table('variant_units')
-                ->whereIn('variant_id', $variantIds)
-                ->get()
-                ->keyBy(fn ($row) => $row->variant_id . '_' . $row->unit_id);
-
-            foreach ($sortedItems as $item) {
-                $variant = $variants->get($item['variant_id']);
-
-                // Hanya potong stok jika produk mengaktifkan track_stock
-                if ($variant && $variant->product && $variant->product->track_stock) {
-                    $factor = 1.0;
-
-                    // Jika satuan jual bukan satuan dasar, kalikan dengan faktor konversi variant_units
-                    if ((int) $item['unit_id'] !== (int) $variant->base_unit_id) {
-                        $unitKey = $item['variant_id'] . '_' . $item['unit_id'];
-                        if ($variantUnits->has($unitKey)) {
-                            $factor = (float) $variantUnits->get($unitKey)->factor;
-                        }
-                    }
-
-                    $baseQtyToDeduct = -1 * ((float) $item['qty'] * $factor);
-                    $unitCost = (int) ($item['cost_snapshot'] ?? $variant->cost_price ?? 0);
-
-                    $this->recordStockMovementService->execute(
-                        $outletId,
-                        (int) $item['variant_id'],
-                        'sale',
-                        $baseQtyToDeduct,
-                        $unitCost,
-                        $cashierId,
-                        'sales',
-                        $sale->id,
-                        "Penjualan #{$sale->receipt_no}"
-                    );
-                }
+            // JIKA STATUS HOLD: Jangan potong stok dan jangan catat pembayaran/kas
+            if ($isHold) {
+                return $sale->load(['items', 'cashier']);
             }
 
-            //Simpan Sale Payments (Split Payment Support) & Hitung Aliran Kas Shift
-            $paymentMethodIds = collect($data['payments'])->pluck('payment_method_id')->unique();
-            $paymentMethods = PaymentMethod::whereIn('id', $paymentMethodIds)->get()->keyBy('id');
+            //Jika COMPLETED: Potong Stok & Catat Ledger Inventory
+            $this->deductStock($data['items'], $outletId, $sale, $cashierId);
 
-            $cashReceived = 0;
-            $nonCashTotal = 0;
-
-            foreach ($data['payments'] as $payment) {
-                $sale->payments()->create([
-                    'payment_method_id' => $payment['payment_method_id'],
-                    'amount' => $payment['amount'],
-                    'reference' => $payment['reference'] ?? null,
-                    'status' => 'paid',
-                    'paid_at' => now(),
-                    'gateway_payload' => $payment['gateway_payload'] ?? null,
-                ]);
-
-                $method = $paymentMethods->get($payment['payment_method_id']);
-                if ($method && $method->type === 'cash') {
-                    $cashReceived += $payment['amount'];
-                } else {
-                    $nonCashTotal += $payment['amount'];
-                }
-            }
-
-            //Jika ada Shift Aktif, catat Ledger Cash Movement & Non-Cash Sales
-            if ($shift) {
-                $netCash = max(0, $cashReceived - $changeTotal);
-
-                if ($netCash > 0) {
-                    $this->recordCashMovementService->execute(
-                        $shift->id,
-                        'sale_cash',
-                        $netCash,
-                        "Penjualan Tunai #{$sale->receipt_no}",
-                        $cashierId,
-                        $sale->id,
-                        'sale'
-                    );
-                }
-
-                if ($nonCashTotal > 0) {
-                    $shift->increment('total_non_cash_sales', $nonCashTotal);
-                }
-            }
+            //impan Payments & Catat Aliran Kas Shift
+            $this->processPayments($data['payments'] ?? [], $sale, $shift, $cashierId, $changeTotal);
 
             return $sale->load(['items', 'payments', 'cashier']);
         });
+    }
+
+    /**
+     * Memotong stok barang di gudang/toko
+     */
+    public function deductStock(array $items, int $outletId, Sale $sale, int $userId): void
+    {
+        $sortedItems = collect($items)->sortBy('variant_id')->values();
+        $variantIds = $sortedItems->pluck('variant_id')->unique();
+
+        $variants = ProductVariant::with('product')
+            ->whereIn('id', $variantIds)
+            ->get()
+            ->keyBy('id');
+
+        $variantUnits = DB::table('variant_units')
+            ->whereIn('variant_id', $variantIds)
+            ->get()
+            ->keyBy(fn ($row) => $row->variant_id . '_' . $row->unit_id);
+
+        foreach ($sortedItems as $item) {
+            $variant = $variants->get($item['variant_id']);
+
+            if ($variant && $variant->product && $variant->product->track_stock) {
+                $factor = 1.0;
+                if ((int) $item['unit_id'] !== (int) $variant->base_unit_id) {
+                    $unitKey = $item['variant_id'] . '_' . $item['unit_id'];
+                    if ($variantUnits->has($unitKey)) {
+                        $factor = (float) $variantUnits->get($unitKey)->factor;
+                    }
+                }
+
+                $baseQtyToDeduct = -1 * ((float) $item['qty'] * $factor);
+                $unitCost = (int) ($item['cost_snapshot'] ?? $variant->cost_price ?? 0);
+
+                $this->recordStockMovementService->execute(
+                    $outletId,
+                    (int) $item['variant_id'],
+                    'sale',
+                    $baseQtyToDeduct,
+                    $unitCost,
+                    $userId,
+                    'sales',
+                    $sale->id,
+                    "Penjualan #{$sale->receipt_no}"
+                );
+            }
+        }
+    }
+
+    /**
+     * Memproses pembayaran dan kas laci shift
+     */
+    public function processPayments(array $payments, Sale $sale, ?Shift $shift, int $userId, int $changeTotal): void
+    {
+        $paymentMethodIds = collect($payments)->pluck('payment_method_id')->unique();
+        $paymentMethods = PaymentMethod::whereIn('id', $paymentMethodIds)->get()->keyBy('id');
+
+        $cashReceived = 0;
+        $nonCashTotal = 0;
+
+        foreach ($payments as $payment) {
+            $sale->payments()->create([
+                'payment_method_id' => $payment['payment_method_id'],
+                'amount' => $payment['amount'],
+                'reference' => $payment['reference'] ?? null,
+                'status' => 'paid',
+                'paid_at' => now(),
+                'gateway_payload' => $payment['gateway_payload'] ?? null,
+            ]);
+
+            $method = $paymentMethods->get($payment['payment_method_id']);
+            if ($method && $method->type === 'cash') {
+                $cashReceived += $payment['amount'];
+            } else {
+                $nonCashTotal += $payment['amount'];
+            }
+        }
+
+        if ($shift) {
+            $netCash = max(0, $cashReceived - $changeTotal);
+
+            if ($netCash > 0) {
+                $this->recordCashMovementService->execute(
+                    $shift->id,
+                    'sale_cash',
+                    $netCash,
+                    "Penjualan Tunai #{$sale->receipt_no}",
+                    $userId,
+                    $sale->id,
+                    'sale'
+                );
+            }
+
+            if ($nonCashTotal > 0) {
+                $shift->increment('total_non_cash_sales', $nonCashTotal);
+            }
+        }
     }
 }
