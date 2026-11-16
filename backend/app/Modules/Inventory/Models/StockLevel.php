@@ -3,17 +3,17 @@
 namespace App\Modules\Inventory\Models;
 
 use App\Modules\Catalog\Models\ProductVariant;
+use App\Modules\Core\Models\Outlet;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class StockLevel extends Model
 {
     protected $table = 'stock_levels';
-    
-    // Karena primary key komposit, nonaktifkan incrementing & set key type
+
     public $incrementing = false;
-    protected $primaryKey = ['outlet_id', 'variant_id'];
-    protected $keyType = 'array';
+
+    protected $primaryKey = null;
 
     protected $fillable = [
         'outlet_id',
@@ -28,6 +28,11 @@ class StockLevel extends Model
             'qty' => 'decimal:3',
             'reorder_point' => 'decimal:3',
         ];
+    }
+
+    public function outlet(): BelongsTo
+    {
+        return $this->belongsTo(Outlet::class, 'outlet_id');
     }
 
     public function variant(): BelongsTo
