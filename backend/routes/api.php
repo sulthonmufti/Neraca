@@ -5,6 +5,8 @@ use App\Modules\Sales\Http\Controllers\SaleController;
 use App\Modules\Cash\Http\Controllers\CashController;
 use App\Modules\Inventory\Http\Controllers\GoodsReceiptController;
 use App\Modules\Inventory\Http\Controllers\SupplierController;
+use App\Modules\Inventory\Http\Controllers\StockLevelController;
+use App\Modules\Inventory\Http\Controllers\StockOpnameController;
 
 Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     // Endpoint Transaksi Penjualan (Sales)
@@ -25,4 +27,8 @@ Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     Route::post('/suppliers', [SupplierController::class, 'store']);
     Route::get('/inventory/goods-receipts', [GoodsReceiptController::class, 'index']);
     Route::post('/inventory/goods-receipts', [GoodsReceiptController::class, 'store']);
+    Route::get('/inventory/stock-opnames', [StockOpnameController::class, 'index']);
+    Route::post('/inventory/stock-opnames', [StockOpnameController::class, 'store']);
+    Route::get('/inventory/stocks', [StockLevelController::class, 'index']);
+    Route::put('/inventory/stocks/reorder-point', [StockLevelController::class, 'updateReorderPoint']);
 });
