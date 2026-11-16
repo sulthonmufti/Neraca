@@ -131,11 +131,80 @@ Neraca/
 ├── .gitignore
 └── README.md
 ```
+## Packages
+
+| Package | Purpose |
+|---------|---------|
+| `laravel/sanctum` | API token authentication |
+| `spatie/laravel-permission` | Role & permission management |
+| `spatie/laravel-activitylog` | Audit log / activity history |
+
+---
+
 ## Modules
 
-- **Catalog**: Provides product catalog management with models `VariantUnit`, `VariantBarcode`, `PriceList`, `Price`, and `Promotion`. All models are tenant‑aware via the `BelongsToTenant` trait.
-- **Sales**: Handles transaction processing. Includes migrations for `sales`, `sale_items`, `sale_discounts`, `sale_payments`, and `receipt_counters`.
-- **Inventory**, **Cash**, **Member**, **Cafe**, **Canteen**, **Koperasi**: Placeholder modules for future extensions.
+| Module | Status | Description |
+|--------|--------|-------------|
+| **Core** | ✅ Active | Tenant, outlet, user, payment methods, taxes, settings, devices |
+| **Catalog** | ✅ Active | Products, variants, units, barcodes, price lists, prices, promotions |
+| **Sales** | ✅ Active | Transaction processing, sale items, discounts, payments, receipt counters |
+| **Cash** | ✅ Active | Cash register management, shift open/close, cash movements |
+| **Inventory** | ✅ Active | Supplier management, goods receipts (GRN), stock ledger, stock opnames |
+| **Member** | 🔲 Planned | Member management (not yet implemented) |
+| **Cafe** | 🔲 Planned | Table & kitchen order management (not yet implemented) |
+| **Canteen** | 🔲 Planned | Canteen-specific features (not yet implemented) |
+| **Koperasi** | 🔲 Planned | Cooperative features (not yet implemented) |
+
+### Module Details
+
+#### Core
+Models: `Tenant`, `Outlet`, `OutletModule`, `PaymentMethod`, `Tax`
+Traits: `BelongsToTenant` — applied to all tenant-scoped models for automatic query scoping.
+
+#### Catalog
+Models: `Category`, `Product`, `ProductVariant`, `Unit`, `VariantUnit`, `VariantBarcode`, `PriceList`, `Price`, `Promotion`
+Seeders: `CatalogSeeder`
+
+#### Sales
+Models: `Sale`, `SaleItem`, `SaleDiscount`, `SalePayment`, `ReceiptCounter`
+Services: `CreateSaleService` — processes a sale transaction within a single atomic DB transaction.
+Controllers: `SaleController`
+
+#### Cash
+Models: `Register`, `Shift`, `CashMovement`
+Services:
+- `OpenShiftService` — opens a new shift, validates that no active shift is already open on the same register.
+- `CloseShiftService` — closes a shift and calculates the difference between physical cash count and the system-expected amount.
+- `RecordCashMovementService` — records cash-in / cash-out movements during an active shift.
+
+Controllers: `CashController`
+
+#### Inventory
+Models: `Supplier`, `GoodsReceipt`, `GoodsReceiptItem`, `GoodsReceiptCounter`, `StockLevel`, `StockMovement`
+Services:
+- `CreateGoodsReceiptService` — processes a Goods Receipt (GRN), updates the Moving Average Cost, and writes stock ledger entries atomically.
+- `RecordStockMovementService` — records each stock movement to `stock_movements` and updates the `stock_levels` balance.
+
+Controllers: `GoodsReceiptController`, `SupplierController`
+
+---
+
+## API Endpoints
+
+Base URL: `/api/v1` — all endpoints require authentication (`auth:sanctum`).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/sales` | Create a new sale transaction |
+| `POST` | `/shifts/open` | Open a cashier shift |
+| `POST` | `/shifts/{id}/movements` | Record a cash movement during a shift |
+| `POST` | `/shifts/{id}/close` | Close a cashier shift |
+| `GET` | `/suppliers` | List all suppliers |
+| `POST` | `/suppliers` | Create a new supplier |
+| `GET` | `/inventory/goods-receipts` | List goods receipts |
+| `POST` | `/inventory/goods-receipts` | Create a new Goods Receipt (GRN) |
+
+---
 
 ## Database Schema
 
@@ -361,7 +430,7 @@ Neraca/
 | `uuid` | uuid UNIQUE | Client-generated UUID for idempotency & offline sync |
 | `tenant_id` | FK → `tenants` | |
 | `outlet_id` | FK → `outlets` | |
-| `shift_id` | bigint nullable | FK to `shifts` (not yet created) |
+| `shift_id` | bigint nullable | FK → `shifts` |
 | `receipt_no` | string(100) | UNIQUE per outlet |
 | `cashier_id` | FK → `users` | |
 | `member_id` | bigint nullable | FK to `members` (not yet created) |
@@ -437,6 +506,166 @@ Neraca/
 
 ---
 
+### Cash
+
+#### `registers`
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | bigint PK | |
+| `tenant_id` | FK → `tenants` | |
+| `outlet_id` | FK → `outlets` | |
+| `name` | string(100) | e.g. Cashier 1, Front POS |
+| `code` | string(50) | UNIQUE per outlet |
+| `is_active` | boolean | |
+
+#### `shifts`
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | bigint PK | |
+| `uuid` | uuid UNIQUE | |
+| `tenant_id` | FK → `tenants` | |
+| `outlet_id` | FK → `outlets` | |
+| `register_id` | FK → `registers` | |
+| `user_id` | FK → `users` | Cashier who opened the shift |
+| `opened_at` | timestampTz | |
+| `closed_at` | timestampTz nullable | |
+| `opening_cash` | bigint | Opening cash amount |
+| `expected_cash` | bigint | System-calculated expected cash (opening + cash-in − cash-out) |
+| `counted_cash` | bigint nullable | Physical cash count at shift close |
+| `diff_cash` | bigint | Difference between counted and expected cash |
+| `total_cash_sales` | bigint | Total cash sales during the shift |
+| `total_non_cash_sales` | bigint | Total non-cash sales during the shift |
+| `total_cash_in` | bigint | Total cash deposited during the shift |
+| `total_cash_out` | bigint | Total cash withdrawn during the shift |
+| `status` | string(30) | `open`, `closed`, `reconciled` |
+| `note` | text nullable | |
+| `close_note` | text nullable | |
+
+#### `cash_movements`
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | bigint PK | |
+| `shift_id` | FK → `shifts` | |
+| `type` | string(30) | e.g. `cash_in`, `cash_out` |
+| `amount` | bigint | |
+| `category` | string(50) nullable | |
+| `reason` | text | |
+| `sale_id` | FK → `sales` nullable | Linked sale if movement is from a transaction |
+| `user_id` | FK → `users` | |
+
+---
+
+### Inventory
+
+#### `suppliers`
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | bigint PK | |
+| `tenant_id` | FK → `tenants` | |
+| `code` | string(50) | UNIQUE per tenant |
+| `name` | string(100) | |
+| `phone` | string(30) nullable | |
+| `address` | text nullable | |
+| `is_active` | boolean | |
+
+#### `goods_receipts` *(GRN — Goods Receipt Note)*
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | bigint PK | |
+| `tenant_id` | FK → `tenants` | |
+| `outlet_id` | FK → `outlets` | |
+| `supplier_id` | FK → `suppliers` nullable | |
+| `receipt_no` | string(50) | Auto-generated: `GRN-YYYYMMDD-NNNNN`, UNIQUE per outlet |
+| `supplier_invoice_no` | string(100) nullable | |
+| `status` | string(20) | `completed` |
+| `total_cost` | bigint | |
+| `note` | text nullable | |
+| `received_at` | timestampTz | |
+| `user_id` | FK → `users` | |
+
+#### `goods_receipt_items`
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | bigint PK | |
+| `goods_receipt_id` | FK → `goods_receipts` | |
+| `variant_id` | FK → `product_variants` | |
+| `unit_id` | FK → `units` | Receiving unit (may differ from base unit) |
+| `qty` | decimal(14,3) | Quantity in receiving unit |
+| `conversion_factor` | decimal(14,3) | Conversion factor to base unit |
+| `base_qty` | decimal(14,3) | Quantity in base unit (`qty × conversion_factor`) |
+| `unit_cost` | bigint | Cost per receiving unit |
+| `base_unit_cost` | bigint | Cost per base unit (`unit_cost ÷ factor`) |
+| `line_total` | bigint | `qty × unit_cost` |
+| `batch_no` | string nullable | |
+| `expired_date` | date nullable | |
+
+#### `goods_receipt_counters`
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | bigint PK | |
+| `outlet_id` | FK → `outlets` | UNIQUE with `counter_date` |
+| `counter_date` | date | |
+| `last_number` | bigint | Last issued GRN number for the day |
+
+#### `stock_levels`
+| Column | Type | Description |
+|--------|------|-------------|
+| `outlet_id` | FK → `outlets` | Composite PK |
+| `variant_id` | FK → `product_variants` | Composite PK |
+| `qty` | decimal(14,3) | Current stock quantity (base unit) |
+| `reorder_point` | decimal(14,3) | Minimum stock threshold for reorder alert |
+
+#### `stock_movements` *(Ledger)*
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | bigint PK | |
+| `outlet_id` | FK → `outlets` | |
+| `variant_id` | FK → `product_variants` | |
+| `type` | string(30) | e.g. `receipt`, `sale`, `opname`, `adjustment` |
+| `qty_change` | decimal(14,3) | Positive = in, Negative = out |
+| `qty_after` | decimal(14,3) | Stock balance after the movement |
+| `unit_cost` | bigint | Cost of goods (COGS) per base unit at time of movement |
+| `ref_type` | string(50) nullable | Source document type (e.g. `goods_receipts`) |
+| `ref_id` | bigint nullable | Source document ID |
+| `batch_id` | bigint nullable | |
+| `note` | text nullable | |
+| `user_id` | FK → `users` | |
+| `created_at` | timestampTz | |
+
+#### `stock_opname_counters`
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | bigint PK | |
+| `outlet_id` | FK → `outlets` | UNIQUE with `counter_date` |
+| `counter_date` | date | |
+| `last_number` | bigint | Last issued opname number for the day |
+
+#### `stock_opnames`
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | bigint PK | |
+| `tenant_id` | FK → `tenants` | |
+| `outlet_id` | FK → `outlets` | |
+| `opname_no` | string(50) | UNIQUE per outlet |
+| `status` | string(20) | `draft`, `completed` |
+| `note` | text nullable | |
+| `opname_at` | timestampTz | Timestamp of the physical count |
+| `user_id` | FK → `users` | |
+
+#### `stock_opname_items`
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | bigint PK | |
+| `stock_opname_id` | FK → `stock_opnames` | |
+| `variant_id` | FK → `product_variants` | |
+| `system_qty` | decimal(14,3) | Stock quantity according to system at time of opname |
+| `physical_qty` | decimal(14,3) | Actual physical count |
+| `diff_qty` | decimal(14,3) | Difference (`physical_qty − system_qty`) |
+| `unit_cost` | bigint | Cost of goods (COGS) per base unit at time of opname (for variance valuation) |
+| `reason` | string(255) nullable | Explanation for discrepancy |
+
+---
+
 ### Entity Relationship (Summary ERD)
 
 ```
@@ -446,12 +675,23 @@ tenants
   │     ├── outlet_modules (outlet_id)
   │     ├── devices (outlet_id)
   │     ├── settings (outlet_id)
+  │     ├── registers (outlet_id)
+  │     │     └── shifts (register_id)
+  │     │           └── cash_movements (shift_id)
   │     ├── sales (outlet_id)
   │     │     ├── sale_items (sale_id)
   │     │     │     └── sale_discounts (sale_item_id)
   │     │     ├── sale_discounts (sale_id)
   │     │     └── sale_payments (sale_id)
-  │     └── receipt_counters (outlet_id)
+  │     ├── receipt_counters (outlet_id)
+  │     ├── goods_receipts (outlet_id)
+  │     │     ├── goods_receipt_items (goods_receipt_id)
+  │     │     └── goods_receipt_counters (outlet_id)
+  │     ├── stock_levels (outlet_id)
+  │     ├── stock_movements (outlet_id)
+  │     ├── stock_opnames (outlet_id)
+  │     │     ├── stock_opname_items (stock_opname_id)
+  │     │     └── stock_opname_counters (outlet_id)
   ├── users (tenant_id)
   ├── settings (tenant_id)
   ├── taxes (tenant_id)
@@ -460,6 +700,7 @@ tenants
   ├── units (tenant_id)
   ├── price_lists (tenant_id)
   ├── promotions (tenant_id)
+  ├── suppliers (tenant_id)
   └── products (tenant_id)
         └── product_variants (product_id)
               ├── variant_units (variant_id)
