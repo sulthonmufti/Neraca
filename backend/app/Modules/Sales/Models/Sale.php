@@ -8,6 +8,7 @@ use App\Modules\Core\Models\Outlet;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Modules\Member\Models\Member;
 
 class Sale extends Model
 {
@@ -83,5 +84,9 @@ class Sale extends Model
     public function returns(): HasMany
     {
         return $this->hasMany(SaleReturn::class, 'sale_id');
+    }
+    public function member(): BelongsTo
+    {
+        return $this->belongsTo(Member::class, 'member_id');
     }
 }
