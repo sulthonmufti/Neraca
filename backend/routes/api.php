@@ -7,6 +7,7 @@ use App\Modules\Inventory\Http\Controllers\GoodsReceiptController;
 use App\Modules\Inventory\Http\Controllers\SupplierController;
 use App\Modules\Inventory\Http\Controllers\StockLevelController;
 use App\Modules\Inventory\Http\Controllers\StockOpnameController;
+use App\Modules\Member\Http\Controllers\MemberController;
 
 Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     // Endpoint Transaksi Penjualan (Sales)
@@ -31,4 +32,13 @@ Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     Route::post('/inventory/stock-opnames', [StockOpnameController::class, 'store']);
     Route::get('/inventory/stocks', [StockLevelController::class, 'index']);
     Route::put('/inventory/stocks/reorder-point', [StockLevelController::class, 'updateReorderPoint']);
+
+    // Endpoint Modul Member Dasar
+    Route::get('/member/departments', [MemberController::class, 'listDepartments']);
+    Route::post('/member/departments', [MemberController::class, 'storeDepartment']);
+    Route::get('/member/types', [MemberController::class, 'listMemberTypes']);
+    Route::post('/member/types', [MemberController::class, 'storeMemberType']);
+    Route::get('/members/lookup', [MemberController::class, 'lookupByCode']);
+    Route::get('/members', [MemberController::class, 'index']);
+    Route::post('/members', [MemberController::class, 'store']);
 });
