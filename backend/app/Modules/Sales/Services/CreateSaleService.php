@@ -7,6 +7,7 @@ use App\Modules\Cash\Services\RecordCashMovementService;
 use App\Modules\Catalog\Models\ProductVariant;
 use App\Modules\Core\Models\PaymentMethod;
 use App\Modules\Inventory\Services\RecordStockMovementService;
+use App\Modules\Member\Models\Member;
 use App\Modules\Sales\Models\ReceiptCounter;
 use App\Modules\Sales\Models\Sale;
 use Carbon\Carbon;
@@ -31,7 +32,7 @@ class CreateSaleService
     {
         //Idempotency Check: Jika UUID sudah ada, kembalikan transaksi sebelumnya
         $clientUuid = $data['uuid'] ?? (string) Str::uuid();
-        $existingSale = Sale::with(['items', 'payments', 'cashier'])
+        $existingSale = Sale::with(['items', 'payments', 'cashier', 'member.memberType'])
             ->where('uuid', $clientUuid)
             ->first();
 
@@ -101,11 +102,34 @@ class CreateSaleService
                 ];
             }
 
-            $discountTotal = $data['discount_total'] ?? 0;
+            // --- TAMBAHAN MODUL MEMBER: Cek Member & Hitung Diskon Otomatis ---
+            $memberId = $data['member_id'] ?? null;
+            $memberDiscountAmount = 0;
+
+            if ($memberId) {
+                /** @var Member|null $member */
+                $member = Member::with('memberType')
+                    ->where('id', $memberId)
+                    ->where('tenant_id', $tenantId)
+                    ->first();
+
+                if (!$member || $member->status !== 'active') {
+                    throw new HttpException(422, 'Member tidak ditemukan atau sedang tidak aktif.');
+                }
+
+                if ($member->memberType && (float) $member->memberType->discount_percent > 0) {
+                    $memberDiscountAmount = (int) round(
+                        $subtotal * ((float) $member->memberType->discount_percent / 100)
+                    );
+                }
+            }
+            // -----------------------------------------------------------------
+
+            $discountTotal = $data['discount_total'] ?? $memberDiscountAmount;
             $taxTotal = $data['tax_total'] ?? 0;
             $serviceTotal = $data['service_total'] ?? 0;
             $rounding = $data['rounding'] ?? 0;
-            $grandTotal = ($subtotal - $discountTotal) + $taxTotal + $serviceTotal + $rounding;
+            $grandTotal = max(0, ($subtotal - $discountTotal) + $taxTotal + $serviceTotal + $rounding);
 
             $paidTotal = 0;
             if (!$isHold && !empty($data['payments'])) {
@@ -116,7 +140,7 @@ class CreateSaleService
 
             $changeTotal = max(0, $paidTotal - $grandTotal);
 
-            //Simpan Header Transaksi (Sales)
+            //Simpan Header Transaksi (Sales) dengan member_id
             $sale = Sale::create([
                 'uuid' => $clientUuid,
                 'tenant_id' => $tenantId,
@@ -124,7 +148,7 @@ class CreateSaleService
                 'shift_id' => $shift?->id,
                 'receipt_no' => $receiptNo,
                 'cashier_id' => $cashierId,
-                'member_id' => $data['member_id'] ?? null,
+                'member_id' => $memberId,
                 'order_type' => $data['order_type'] ?? 'dine_in',
                 'table_id' => $data['table_id'] ?? null,
                 'status' => $isHold ? 'hold' : 'completed',
@@ -148,16 +172,16 @@ class CreateSaleService
 
             // JIKA STATUS HOLD: Jangan potong stok dan jangan catat pembayaran/kas
             if ($isHold) {
-                return $sale->load(['items', 'cashier']);
+                return $sale->load(['items', 'cashier', 'member.memberType']);
             }
 
             //Jika COMPLETED: Potong Stok & Catat Ledger Inventory
             $this->deductStock($data['items'], $outletId, $sale, $cashierId);
 
-            //impan Payments & Catat Aliran Kas Shift
+            //Simpan Payments & Catat Aliran Kas Shift
             $this->processPayments($data['payments'] ?? [], $sale, $shift, $cashierId, $changeTotal);
 
-            return $sale->load(['items', 'payments', 'cashier']);
+            return $sale->load(['items', 'payments', 'cashier', 'member.memberType']);
         });
     }
 
