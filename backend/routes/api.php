@@ -8,6 +8,7 @@ use App\Modules\Inventory\Http\Controllers\SupplierController;
 use App\Modules\Inventory\Http\Controllers\StockLevelController;
 use App\Modules\Inventory\Http\Controllers\StockOpnameController;
 use App\Modules\Member\Http\Controllers\MemberController;
+use App\Modules\Reporting\Http\Controllers\ReportController;
 
 Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     // Endpoint Transaksi Penjualan (Sales)
@@ -41,4 +42,10 @@ Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     Route::get('/members/lookup', [MemberController::class, 'lookupByCode']);
     Route::get('/members', [MemberController::class, 'index']);
     Route::post('/members', [MemberController::class, 'store']);
+
+    // Endpoint Modul Laporan Dasar / Reporting
+    Route::get('/reports/sales/summary', [ReportController::class, 'summary']);
+    Route::get('/reports/sales/by-product', [ReportController::class, 'byProduct']);
+    Route::get('/reports/sales/by-payment-method', [ReportController::class, 'byPaymentMethod']);
+    Route::get('/reports/sales/by-cashier', [ReportController::class, 'byCashier']);
 });
