@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Modules\Core\Http\Controllers\AuthController;
 use App\Modules\Sales\Http\Controllers\SaleController;
 use App\Modules\Cash\Http\Controllers\CashController;
 use App\Modules\Inventory\Http\Controllers\GoodsReceiptController;
@@ -10,10 +11,18 @@ use App\Modules\Inventory\Http\Controllers\StockOpnameController;
 use App\Modules\Member\Http\Controllers\MemberController;
 use App\Modules\Reporting\Http\Controllers\ReportController;
 
+// Route Publik (Tanpa Token)
+Route::prefix('v1')->group(function () {
+    Route::post('/auth/login', [AuthController::class, 'login']);
+});
+
+// Route Terproteksi (Wajib Bearer Token Sanctum)
 Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
+    // Autentikasi
+    Route::post('/auth/logout', [AuthController::class, 'logout']);
+
     // Endpoint Transaksi Penjualan (Sales)
     Route::post('/sales', [SaleController::class, 'store']);
-    Route::post('/sales/{id}/void', [SaleController::class, 'voidSale']);
     Route::post('/sales/{id}/void', [SaleController::class, 'voidSale']);
     Route::post('/sales/{id}/returns', [SaleController::class, 'returnSale']);
     Route::get('/sales/hold', [SaleController::class, 'listHold']);
