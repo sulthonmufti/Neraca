@@ -110,31 +110,33 @@ class CoreSeeder extends Seeder
             );
         }
 
-        // 8. Buat User Admin & Kasir (dengan PIN 123456)
-        $admin = User::firstOrCreate(
-            ['email' => 'admin@neraca.test'],
-            [
-                'tenant_id' => $tenant->id,
-                'name' => 'Administrator Neraca',
-                'password' => Hash::make('password'),
-                'pin_hash' => Hash::make('111111'),
-                'is_active' => true,
-            ]
-        );
-        $admin->assignRole($adminRole);
-        $admin->outlets()->syncWithoutDetaching([$outlet->id => ['is_default' => true]]);
+        // 8. Buat User Demo Admin & Kasir (Hanya dijalankan di local/staging)
+        if (app()->environment(['local', 'staging'])) {
+            $admin = User::firstOrCreate(
+                ['email' => 'admin@neraca.test'],
+                [
+                    'tenant_id' => $tenant->id,
+                    'name' => 'Administrator Neraca',
+                    'password' => Hash::make('password'),
+                    'pin_hash' => Hash::make('111111'),
+                    'is_active' => true,
+                ]
+            );
+            $admin->assignRole($adminRole);
+            $admin->outlets()->syncWithoutDetaching([$outlet->id => ['is_default' => true]]);
 
-        $kasir = User::firstOrCreate(
-            ['email' => 'kasir@neraca.test'],
-            [
-                'tenant_id' => $tenant->id,
-                'name' => 'Kasir Utama',
-                'password' => Hash::make('password'),
-                'pin_hash' => Hash::make('123456'),
-                'is_active' => true,
-            ]
-        );
-        $kasir->assignRole($kasirRole);
-        $kasir->outlets()->syncWithoutDetaching([$outlet->id => ['is_default' => true]]);
+            $kasir = User::firstOrCreate(
+                ['email' => 'kasir@neraca.test'],
+                [
+                    'tenant_id' => $tenant->id,
+                    'name' => 'Kasir Utama',
+                    'password' => Hash::make('password'),
+                    'pin_hash' => Hash::make('123456'),
+                    'is_active' => true,
+                ]
+            );
+            $kasir->assignRole($kasirRole);
+            $kasir->outlets()->syncWithoutDetaching([$outlet->id => ['is_default' => true]]);
+        }
     }
 }

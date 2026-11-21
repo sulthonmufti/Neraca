@@ -49,6 +49,8 @@ class AuthController extends Controller
                     'email' => $user->email,
                     'tenant_id' => $user->tenant_id,
                     'outlet_id' => $defaultOutlet?->id ?? 1,
+                    'roles' => $user->getRoleNames()->values()->all(),
+                    'permissions' => $user->getAllPermissions()->pluck('name')->values()->all(),
                 ],
             ],
         ]);
