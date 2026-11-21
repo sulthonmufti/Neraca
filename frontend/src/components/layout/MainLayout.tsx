@@ -12,17 +12,20 @@ import {
 import { useAuthStore } from '../../stores/authStore';
 
 const navItems = [
-  { to: '/pos', label: 'Kasir (POS)', icon: ShoppingCart },
-  { to: '/shift', label: 'Shift & Kas', icon: Clock },
-  { to: '/catalog', label: 'Produk', icon: Package },
-  { to: '/inventory', label: 'Stok Gudang', icon: Warehouse },
-  { to: '/members', label: 'Member', icon: Users },
-  { to: '/reports', label: 'Laporan', icon: BarChart3 },
+  { to: '/pos', label: 'Kasir (POS)', icon: ShoppingCart, permission: 'sale.create' },
+  { to: '/shift', label: 'Shift & Kas', icon: Clock, permission: 'shift.open' },
+  { to: '/catalog', label: 'Produk', icon: Package, permission: 'catalog.manage' },
+  { to: '/inventory', label: 'Stok Gudang', icon: Warehouse, permission: 'inventory.manage' },
+  { to: '/members', label: 'Member', icon: Users, permission: 'member.manage' },
+  { to: '/reports', label: 'Laporan', icon: BarChart3, permission: 'report.view' },
 ];
 
 export function MainLayout() {
-  const { user, logout } = useAuthStore();
+  const { user, hasPermission, logout } = useAuthStore();
   const navigate = useNavigate();
+
+  const visibleNavItems = navItems.filter((item) => hasPermission(item.permission));
+  const primaryRole = user?.roles?.[0] ?? 'user';
 
   const handleLogout = () => {
     logout();
@@ -39,7 +42,7 @@ export function MainLayout() {
         </div>
 
         <nav className="flex-1 p-3 space-y-1">
-          {navItems.map(({ to, label, icon: Icon }) => (
+          {visibleNavItems.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
@@ -58,9 +61,13 @@ export function MainLayout() {
         </nav>
 
         <div className="p-4 border-t border-slate-800">
-          <div className="text-xs text-slate-400 mb-2 truncate">
-            {user?.name} ({user?.email})
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <span className="text-xs font-medium text-white truncate">{user?.name}</span>
+            <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-slate-800 text-emerald-400">
+              {primaryRole}
+            </span>
           </div>
+          <div className="text-xs text-slate-400 mb-3 truncate">{user?.email}</div>
           <button
             onClick={handleLogout}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-red-600 text-slate-200 hover:text-white text-sm font-medium transition-colors cursor-pointer"
