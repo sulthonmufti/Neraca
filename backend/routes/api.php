@@ -29,6 +29,7 @@ Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     Route::post('/sales/{id}/pay', [SaleController::class, 'payHold']);
 
     // Endpoint Shift & Mutasi Kas (Cash)
+    Route::get('/shifts/current', [CashController::class, 'currentShift']);
     Route::post('/shifts/open', [CashController::class, 'openShift']);
     Route::post('/shifts/{id}/movements', [CashController::class, 'storeMovement']);
     Route::post('/shifts/{id}/close', [CashController::class, 'closeShift']);
