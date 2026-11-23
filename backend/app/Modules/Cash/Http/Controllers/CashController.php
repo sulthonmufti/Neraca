@@ -135,4 +135,35 @@ class CashController extends Controller
             ], 400);
         }
     }
+    public function currentShift(Request $request): JsonResponse
+    {
+        $outletId = $request->query('outlet_id', 1);
+
+        $shift = \App\Modules\Cash\Models\Shift::with(['cashMovements' => function ($q) {
+            $q->orderByDesc('created_at');
+        }])
+            ->where('outlet_id', $outletId)
+            ->where('status', 'open')
+            ->latest('opened_at')
+            ->first();
+
+        if (!$shift) {
+            return response()->json([
+                'success' => true,
+                'data' => null,
+            ]);
+        }
+
+        $movementsSum = (int) $shift->cashMovements->sum('amount');
+        $expectedCash = (int) $shift->opening_cash + $movementsSum;
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'shift' => $shift,
+                'expected_cash' => $expectedCash,
+                'movements' => $shift->cashMovements,
+            ],
+        ]);
+    }
 }
