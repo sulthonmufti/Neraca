@@ -6,6 +6,8 @@ export interface AuthUser {
   email: string;
   tenant_id: number;
   outlet_id?: number;
+  roles?: string[];
+  permissions?: string[];
 }
 
 interface AuthState {
@@ -14,13 +16,14 @@ interface AuthState {
   outletId: number;
   setAuth: (token: string, user: AuthUser) => void;
   setOutletId: (outletId: number) => void;
+  hasPermission: (permission: string) => boolean;
   logout: () => void;
 }
 
 const savedToken = localStorage.getItem('neraca_token');
 const savedUser = localStorage.getItem('neraca_user');
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   token: savedToken,
   user: savedUser ? (JSON.parse(savedUser) as AuthUser) : null,
   outletId: 1,
@@ -36,6 +39,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   setOutletId: (outletId) => set({ outletId }),
+
+  hasPermission: (permission) => {
+    const user = get().user;
+    if (!user) return false;
+    if (user.roles?.includes('admin')) return true;
+    return user.permissions?.includes(permission) ?? false;
+  },
 
   logout: () => {
     localStorage.removeItem('neraca_token');
