@@ -10,6 +10,7 @@ use App\Modules\Inventory\Http\Controllers\StockLevelController;
 use App\Modules\Inventory\Http\Controllers\StockOpnameController;
 use App\Modules\Member\Http\Controllers\MemberController;
 use App\Modules\Reporting\Http\Controllers\ReportController;
+use App\Modules\Catalog\Http\Controllers\PosCatalogController;
 
 // Route Publik (Tanpa Token)
 Route::prefix('v1')->group(function () {
@@ -58,4 +59,8 @@ Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     Route::get('/reports/sales/by-product', [ReportController::class, 'byProduct']);
     Route::get('/reports/sales/by-payment-method', [ReportController::class, 'byPaymentMethod']);
     Route::get('/reports/sales/by-cashier', [ReportController::class, 'byCashier']);
+
+    // Endpoint Pendukung Layar Kasir (POS)
+    Route::get('/pos/catalog', [PosCatalogController::class, 'catalog']);
+    Route::get('/payment-methods', [PosCatalogController::class, 'paymentMethods']);
 });
