@@ -5,6 +5,7 @@ import { LoginPage } from './features/auth/LoginPage';
 import { MainLayout } from './components/layout/MainLayout';
 import { OverviewPage } from './features/dashboard/OverviewPage';
 import { ShiftPage } from './features/shift/ShiftPage';
+import { PosPage } from './features/pos/PosPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -56,7 +57,7 @@ export default function App() {
           >
             <Route index element={<DefaultHomeRedirect />} />
             <Route path="overview" element={<OverviewPage />} />
-            <Route path="pos" element={<PlaceholderPage title="Layar Kasir (POS)" />} />
+            <Route path="pos" element={<PosPage />} />
             <Route path="shift" element={<ShiftPage />} />
             <Route path="catalog" element={<PlaceholderPage title="Master Produk" />} />
             <Route path="inventory" element={<PlaceholderPage title="Stok Gudang" />} />

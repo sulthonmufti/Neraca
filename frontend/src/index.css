@@ -4,3 +4,41 @@ body {
   font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
   background: #eef0f4;
 }
+
+@page {
+  size: 80mm auto;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    width: 80mm !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    background: #ffffff !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  #receipt-print-area,
+  #receipt-print-area * {
+    visibility: visible;
+  }
+
+  #receipt-print-area {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 80mm !important;
+    margin: 0 !important;
+    padding: 4mm 5mm !important;
+    background: #ffffff !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+}
