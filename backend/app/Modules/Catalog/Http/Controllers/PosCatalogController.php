@@ -22,6 +22,15 @@ class PosCatalogController extends Controller
         $tenantId = $user->tenant_id;
         $outletId = (int) $request->query('outlet_id', 1);
 
+        $tenant = DB::table('tenants')
+            ->where('id', $tenantId)
+            ->first(['id', 'name', 'code']);
+
+        $outlet = DB::table('outlets')
+            ->where('id', $outletId)
+            ->where('tenant_id', $tenantId)
+            ->first(['id', 'code', 'name', 'address', 'phone', 'receipt_header', 'receipt_footer']);
+
         $categories = Category::where('tenant_id', $tenantId)
             ->where('is_active', true)
             ->orderBy('sort_order')
@@ -89,6 +98,14 @@ class PosCatalogController extends Controller
         return response()->json([
             'success' => true,
             'data' => [
+                'outlet' => [
+                    'tenant_name' => $tenant->name ?? 'NERACA POS',
+                    'name' => $outlet->name ?? 'Outlet',
+                    'address' => $outlet->address ?? null,
+                    'phone' => $outlet->phone ?? null,
+                    'receipt_header' => $outlet->receipt_header ?? null,
+                    'receipt_footer' => $outlet->receipt_footer ?? null,
+                ],
                 'categories' => $categories,
                 'items' => $variants,
             ],
@@ -102,7 +119,7 @@ class PosCatalogController extends Controller
         $methods = PaymentMethod::where('tenant_id', $tenantId)
             ->where('is_active', true)
             ->orderBy('sort_order')
-            ->get(['id', 'code', 'name', 'type', 'sort_order']);
+            ->get(['id', 'name', 'code', 'type', 'sort_order']);
 
         return response()->json([
             'success' => true,

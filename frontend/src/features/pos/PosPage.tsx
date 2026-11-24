@@ -18,7 +18,7 @@ import {
 import { api } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
 import { useCartStore, type CatalogItem } from '../../stores/cartStore';
-import { ReceiptModal, type ReceiptData } from './ReceiptModal';
+import { ReceiptModal, type OutletReceiptInfo, type ReceiptData } from './ReceiptModal';
 
 interface Category {
   id: number;
@@ -104,6 +104,7 @@ export function PosPage() {
 
   // 2. Ambil Katalog Produk
   const { data: catalogData, isLoading: loadingCatalog } = useQuery<{
+    outlet?: OutletReceiptInfo;
     categories: Category[];
     items: CatalogItem[];
   }>({
@@ -858,7 +859,13 @@ export function PosPage() {
       )}
 
       {/* MODAL STRUK */}
-      {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
+      {receipt && (
+        <ReceiptModal
+          receipt={receipt}
+          outlet={catalogData?.outlet}
+          onClose={() => setReceipt(null)}
+        />
+      )}
     </div>
   );
 }
