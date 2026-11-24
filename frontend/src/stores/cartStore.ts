@@ -36,6 +36,7 @@ export interface SelectedMember {
 }
 
 interface CartState {
+  activeHoldId: number | null;
   items: CartItem[];
   member: SelectedMember | null;
   note: string;
@@ -44,10 +45,12 @@ interface CartState {
   removeItem: (variantId: number) => void;
   setMember: (member: SelectedMember | null) => void;
   setNote: (note: string) => void;
+  loadHoldSale: (holdId: number, items: CartItem[], member: SelectedMember | null) => void;
   clearCart: () => void;
 }
 
 export const useCartStore = create<CartState>((set) => ({
+  activeHoldId: null,
   items: [],
   member: null,
   note: '',
@@ -92,5 +95,6 @@ export const useCartStore = create<CartState>((set) => ({
 
   setMember: (member) => set({ member }),
   setNote: (note) => set({ note }),
-  clearCart: () => set({ items: [], member: null, note: '' }),
+  loadHoldSale: (holdId, items, member) => set({ activeHoldId: holdId, items, member }),
+  clearCart: () => set({ activeHoldId: null, items: [], member: null, note: '' }),
 }));

@@ -37,9 +37,18 @@ interface HoldSale {
   receipt_no: string | null;
   grand_total: number;
   created_at: string;
+  member?: {
+    id: number;
+    name: string;
+    member_no: string;
+    member_type?: { discount_percent: number };
+  } | null;
   items: {
     id: number;
+    variant_id: number;
+    unit_id: number;
     name_snapshot: string;
+    sku_snapshot: string;
     qty: number;
     unit_price: number;
   }[];
@@ -57,7 +66,17 @@ export function PosPage() {
   const queryClient = useQueryClient();
   const outletId = useAuthStore((s) => s.outletId);
 
-  const { items, member, addItem, updateQty, removeItem, setMember, clearCart } = useCartStore();
+  const {
+    activeHoldId,
+    items,
+    member,
+    addItem,
+    updateQty,
+    removeItem,
+    setMember,
+    loadHoldSale,
+    clearCart,
+  } = useCartStore();
 
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<number | 'all'>('all');
@@ -178,24 +197,49 @@ export function PosPage() {
   const numericPaid = Number(paidAmount) || 0;
   const changeTotal = Math.max(0, numericPaid - activeTotalToPay);
 
-  // Mutation: Simpan Transaksi (Completed atau Hold)
+  // Mutation: Simpan Transaksi (Baru atau Update Hold Bill)
   const checkoutMutation = useMutation({
     mutationFn: async (mode: 'completed' | 'hold') => {
       const methodId = selectedMethodId ?? paymentMethods[0]?.id;
+      const mappedItems = items.map((i) => ({
+        variant_id: i.variant_id,
+        unit_id: i.unit_id,
+        name_snapshot: i.name_snapshot,
+        sku_snapshot: i.sku_snapshot,
+        qty: i.qty,
+        unit_price: i.unit_price,
+      }));
+
+      // Jika sedang mengedit Hold Bill yang sudah ada
+      if (activeHoldId) {
+        const updateRes = await api.put(`/sales/${activeHoldId}/hold`, {
+          member_id: member?.id ?? null,
+          items: mappedItems,
+        });
+
+        if (mode === 'hold') {
+          return { res: updateRes.data, mode, methodId };
+        }
+
+        const payRes = await api.post(`/sales/${activeHoldId}/pay`, {
+          payments: [
+            {
+              payment_method_id: methodId,
+              amount: numericPaid || grandTotal,
+            },
+          ],
+        });
+        return { res: payRes.data, mode, methodId };
+      }
+
+      // Transaksi baru
       const payload: Record<string, unknown> = {
         outlet_id: outletId,
         shift_id: currentShift?.shift?.id,
         member_id: member?.id ?? null,
         uuid: crypto.randomUUID(),
         status: mode,
-        items: items.map((i) => ({
-          variant_id: i.variant_id,
-          unit_id: i.unit_id,
-          name_snapshot: i.name_snapshot,
-          sku_snapshot: i.sku_snapshot,
-          qty: i.qty,
-          unit_price: i.unit_price,
-        })),
+        items: mappedItems,
       };
 
       if (mode === 'completed') {
@@ -213,8 +257,7 @@ export function PosPage() {
     onSuccess: ({ res, mode, methodId }) => {
       const sale = res?.data;
       if (mode === 'completed') {
-        const methodName =
-          paymentMethods.find((m) => m.id === methodId)?.name ?? 'Tunai';
+        const methodName = paymentMethods.find((m) => m.id === methodId)?.name ?? 'Tunai';
         setReceipt({
           receipt_no: sale?.receipt_no,
           sold_at: sale?.sold_at,
@@ -248,7 +291,7 @@ export function PosPage() {
     },
   });
 
-  // Mutation: Bayar Hold Bill
+  // Mutation: Bayar Hold Bill langsung dari modal Hold
   const payHoldMutation = useMutation({
     mutationFn: async () => {
       if (!payingHoldSale) return;
@@ -265,8 +308,7 @@ export function PosPage() {
     },
     onSuccess: (result) => {
       if (!result || !payingHoldSale) return;
-      const methodName =
-        paymentMethods.find((m) => m.id === result.methodId)?.name ?? 'Tunai';
+      const methodName = paymentMethods.find((m) => m.id === result.methodId)?.name ?? 'Tunai';
       setReceipt({
         receipt_no: result.res?.data?.receipt_no ?? payingHoldSale.receipt_no ?? undefined,
         items: payingHoldSale.items,
@@ -274,7 +316,10 @@ export function PosPage() {
         discount_total: 0,
         grand_total: payingHoldSale.grand_total,
         paid_total: numericPaid || payingHoldSale.grand_total,
-        change_total: Math.max(0, (numericPaid || payingHoldSale.grand_total) - payingHoldSale.grand_total),
+        change_total: Math.max(
+          0,
+          (numericPaid || payingHoldSale.grand_total) - payingHoldSale.grand_total
+        ),
         payment_method_name: methodName,
       });
       setPayingHoldSale(null);
@@ -288,6 +333,48 @@ export function PosPage() {
       setErrorMsg(err.response?.data?.message || 'Gagal membayar hold bill.');
     },
   });
+
+  // Mutation: Batalkan Hold Bill
+  const cancelHoldMutation = useMutation({
+    mutationFn: async (holdId: number) => {
+      await api.post(`/sales/${holdId}/cancel-hold`, {
+        void_reason: 'Dibatalkan pelanggan',
+      });
+    },
+    onSuccess: (_, holdId) => {
+      if (activeHoldId === holdId) {
+        clearCart();
+      }
+      queryClient.invalidateQueries({ queryKey: ['hold-sales', outletId] });
+    },
+    onError: (err: any) => {
+      setErrorMsg(err.response?.data?.message || 'Gagal membatalkan hold bill.');
+    },
+  });
+
+  // Muat ulang Hold Bill ke keranjang untuk diedit
+  const handleResumeHold = (h: HoldSale) => {
+    const restoredItems = h.items.map((it) => ({
+      variant_id: it.variant_id,
+      unit_id: it.unit_id,
+      name_snapshot: it.name_snapshot,
+      sku_snapshot: it.sku_snapshot,
+      unit_code: 'pcs',
+      unit_price: Number(it.unit_price),
+      qty: Number(it.qty),
+    }));
+    const restoredMember = h.member
+      ? {
+          id: h.member.id,
+          name: h.member.name,
+          member_no: h.member.member_no,
+          discount_percent: Number(h.member.member_type?.discount_percent ?? 0),
+        }
+      : null;
+
+    loadHoldSale(h.id, restoredItems, restoredMember);
+    setHoldModalOpen(false);
+  };
 
   const openPaymentModal = (holdSale: HoldSale | null = null) => {
     setErrorMsg(null);
@@ -466,6 +553,20 @@ export function PosPage() {
           )}
         </div>
 
+        {/* Badge Edit Hold Bill */}
+        {activeHoldId && (
+          <div className="mt-3 px-3 py-2 rounded-xl bg-[#ede9fe] text-[#5b4bc4] text-xs font-medium flex items-center justify-between">
+            <span>Mengedit Hold #{activeHoldId}</span>
+            <button
+              type="button"
+              onClick={clearCart}
+              className="underline hover:text-[#1c1c1e] cursor-pointer"
+            >
+              Batal Edit
+            </button>
+          </div>
+        )}
+
         {/* Input Member */}
         <div className="py-3 border-b border-slate-100">
           {member ? (
@@ -582,7 +683,7 @@ export function PosPage() {
               onClick={() => checkoutMutation.mutate('hold')}
               className="h-12 rounded-xl bg-[#F5F6FA] hover:bg-slate-200 text-[#1c1c1e] text-xs font-semibold disabled:opacity-50 cursor-pointer"
             >
-              Hold
+              {activeHoldId ? 'Simpan Hold' : 'Hold'}
             </button>
             <button
               type="button"
@@ -716,16 +817,38 @@ export function PosPage() {
                         Total: {formatRp(h.grand_total)}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setHoldModalOpen(false);
-                        openPaymentModal(h);
-                      }}
-                      className="px-4 h-9 rounded-xl bg-[#1c1c1e] text-white text-xs font-medium cursor-pointer"
-                    >
-                      Bayar
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleResumeHold(h)}
+                        className="px-3 h-9 rounded-xl bg-white hover:bg-slate-200 text-[#1c1c1e] text-xs font-medium cursor-pointer"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHoldModalOpen(false);
+                          openPaymentModal(h);
+                        }}
+                        className="px-3 h-9 rounded-xl bg-[#1c1c1e] text-white text-xs font-medium cursor-pointer"
+                      >
+                        Bayar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={cancelHoldMutation.isPending}
+                        onClick={() => {
+                          if (window.confirm(`Batalkan Hold #${h.id}?`)) {
+                            cancelHoldMutation.mutate(h.id);
+                          }
+                        }}
+                        className="w-9 h-9 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center cursor-pointer"
+                        title="Batalkan Hold Bill"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
