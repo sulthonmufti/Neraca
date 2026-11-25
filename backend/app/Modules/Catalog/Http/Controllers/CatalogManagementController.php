@@ -341,6 +341,7 @@ class CatalogManagementController extends Controller
                     }
 
                     if ($variantId) {
+                        /** @var ProductVariant $variant */
                         $variant = ProductVariant::where('product_id', $product->id)
                             ->where('id', $variantId)
                             ->firstOrFail();
@@ -377,6 +378,7 @@ class CatalogManagementController extends Controller
                         }
 
                         $firstBarcode = $variant->barcodes()->first();
+                        /** @var VariantBarcode|null $firstBarcode */
                         if ($firstBarcode) {
                             $firstBarcode->update([
                                 'unit_id' => $variant->base_unit_id,
