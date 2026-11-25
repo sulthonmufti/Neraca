@@ -264,8 +264,8 @@ export function CatalogPage() {
         sku: '',
         name: 'Default',
         base_unit_id: units[0]?.id ? String(units[0].id) : '',
-        cost_price: '0',
-        sell_price: '0',
+        cost_price: '',
+        sell_price: '',
         barcode: '',
       },
     ]);
@@ -307,8 +307,8 @@ export function CatalogPage() {
         sku: '',
         name: '',
         base_unit_id: units[0]?.id ? String(units[0].id) : '',
-        cost_price: '0',
-        sell_price: '0',
+        cost_price: '',
+        sell_price: '',
         barcode: '',
       },
     ]);
@@ -795,62 +795,95 @@ export function CatalogPage() {
                       )}
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      <input
-                        type="text"
-                        required
-                        value={v.name}
-                        onChange={(e) => updateVariantField(idx, 'name', e.target.value)}
-                        placeholder="Nama varian (Default/Large)"
-                        className="h-10 px-3 rounded-xl bg-white text-xs focus:outline-none focus:ring-2 focus:ring-[#8b7fd0]"
-                      />
-                      <input
-                        type="text"
-                        required
-                        value={v.sku}
-                        onChange={(e) => updateVariantField(idx, 'sku', e.target.value)}
-                        placeholder="SKU unik *"
-                        className="h-10 px-3 rounded-xl bg-white text-xs focus:outline-none focus:ring-2 focus:ring-[#8b7fd0]"
-                      />
-                      <select
-                        required
-                        value={v.base_unit_id}
-                        onChange={(e) => updateVariantField(idx, 'base_unit_id', e.target.value)}
-                        className="h-10 px-3 rounded-xl bg-white text-xs focus:outline-none focus:ring-2 focus:ring-[#8b7fd0]"
-                      >
-                        <option value="">Pilih Satuan *</option>
-                        {units.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.name} ({u.code})
-                          </option>
-                        ))}
-                      </select>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                          Nama Varian *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={v.name}
+                          onChange={(e) => updateVariantField(idx, 'name', e.target.value)}
+                          placeholder="Default / Regular / Large"
+                          className="w-full h-10 px-3 rounded-xl bg-white text-xs focus:outline-none focus:ring-2 focus:ring-[#8b7fd0]"
+                        />
+                      </div>
 
-                      <input
-                        type="number"
-                        min={0}
-                        required
-                        value={v.cost_price}
-                        onChange={(e) => updateVariantField(idx, 'cost_price', e.target.value)}
-                        placeholder="Harga Modal (Rp)"
-                        className="h-10 px-3 rounded-xl bg-white text-xs focus:outline-none focus:ring-2 focus:ring-[#8b7fd0]"
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        required
-                        value={v.sell_price}
-                        onChange={(e) => updateVariantField(idx, 'sell_price', e.target.value)}
-                        placeholder="Harga Jual (Rp) *"
-                        className="h-10 px-3 rounded-xl bg-white text-xs focus:outline-none focus:ring-2 focus:ring-[#8b7fd0]"
-                      />
-                      <input
-                        type="text"
-                        value={v.barcode}
-                        onChange={(e) => updateVariantField(idx, 'barcode', e.target.value)}
-                        placeholder="Barcode (opsional)"
-                        className="h-10 px-3 rounded-xl bg-white text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#8b7fd0]"
-                      />
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                          SKU Unik *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={v.sku}
+                          onChange={(e) => updateVariantField(idx, 'sku', e.target.value)}
+                          placeholder="Contoh: KOPI-001"
+                          className="w-full h-10 px-3 rounded-xl bg-white text-xs focus:outline-none focus:ring-2 focus:ring-[#8b7fd0]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                          Satuan *
+                        </label>
+                        <select
+                          required
+                          value={v.base_unit_id}
+                          onChange={(e) => updateVariantField(idx, 'base_unit_id', e.target.value)}
+                          className="w-full h-10 px-3 rounded-xl bg-white text-xs focus:outline-none focus:ring-2 focus:ring-[#8b7fd0]"
+                        >
+                          <option value="">Pilih Satuan</option>
+                          {units.map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.name} ({u.code})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                          Harga Modal / HPP (Rp)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={v.cost_price}
+                          onChange={(e) => updateVariantField(idx, 'cost_price', e.target.value)}
+                          placeholder="Contoh: 10000"
+                          className="w-full h-10 px-3 rounded-xl bg-white text-xs focus:outline-none focus:ring-2 focus:ring-[#8b7fd0]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                          Harga Jual (Rp) *
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          required
+                          value={v.sell_price}
+                          onChange={(e) => updateVariantField(idx, 'sell_price', e.target.value)}
+                          placeholder="Contoh: 18000"
+                          className="w-full h-10 px-3 rounded-xl bg-white text-xs focus:outline-none focus:ring-2 focus:ring-[#8b7fd0]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                          Barcode (Opsional)
+                        </label>
+                        <input
+                          type="text"
+                          value={v.barcode}
+                          onChange={(e) => updateVariantField(idx, 'barcode', e.target.value)}
+                          placeholder="Scan / ketik barcode"
+                          className="w-full h-10 px-3 rounded-xl bg-white text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#8b7fd0]"
+                        />
+                      </div>
                     </div>
                   </div>
                 ))}
