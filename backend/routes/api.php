@@ -11,6 +11,7 @@ use App\Modules\Inventory\Http\Controllers\StockOpnameController;
 use App\Modules\Member\Http\Controllers\MemberController;
 use App\Modules\Reporting\Http\Controllers\ReportController;
 use App\Modules\Catalog\Http\Controllers\PosCatalogController;
+use App\Modules\Catalog\Http\Controllers\CatalogManagementController;
 
 // Route Publik (Tanpa Token)
 Route::prefix('v1')->group(function () {
@@ -65,4 +66,17 @@ Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     // Endpoint Pendukung Layar Kasir (POS)
     Route::get('/pos/catalog', [PosCatalogController::class, 'catalog']);
     Route::get('/payment-methods', [PosCatalogController::class, 'paymentMethods']);
+
+    // Endpoint Master Produk, Kategori & Satuan (Catalog CRUD)
+    Route::get('/catalog/categories', [CatalogManagementController::class, 'listCategories']);
+    Route::post('/catalog/categories', [CatalogManagementController::class, 'storeCategory']);
+    Route::put('/catalog/categories/{id}', [CatalogManagementController::class, 'updateCategory']);
+    Route::delete('/catalog/categories/{id}', [CatalogManagementController::class, 'destroyCategory']);
+    Route::get('/catalog/units', [CatalogManagementController::class, 'listUnits']);
+    Route::post('/catalog/units', [CatalogManagementController::class, 'storeUnit']);
+    Route::delete('/catalog/units/{id}', [CatalogManagementController::class, 'destroyUnit']);
+    Route::get('/catalog/products', [CatalogManagementController::class, 'listProducts']);
+    Route::post('/catalog/products', [CatalogManagementController::class, 'storeProduct']);
+    Route::put('/catalog/products/{id}', [CatalogManagementController::class, 'updateProduct']);
+    Route::delete('/catalog/products/{id}', [CatalogManagementController::class, 'destroyProduct']);
 });
