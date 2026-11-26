@@ -7,6 +7,7 @@ import { OverviewPage } from './features/dashboard/OverviewPage';
 import { ShiftPage } from './features/shift/ShiftPage';
 import { PosPage } from './features/pos/PosPage';
 import { CatalogPage } from './features/catalog/CatalogPage';
+import { InventoryPage } from './features/inventory/InventoryPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -61,7 +62,7 @@ export default function App() {
             <Route path="pos" element={<PosPage />} />
             <Route path="shift" element={<ShiftPage />} />
             <Route path="catalog" element={<CatalogPage />} />
-            <Route path="inventory" element={<PlaceholderPage title="Stok Gudang" />} />
+            <Route path="inventory" element={<InventoryPage />} />
             <Route path="members" element={<PlaceholderPage title="Data Member" />} />
             <Route path="reports" element={<PlaceholderPage title="Laporan Penjualan" />} />
           </Route>
