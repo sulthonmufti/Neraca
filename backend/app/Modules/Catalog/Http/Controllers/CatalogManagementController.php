@@ -96,14 +96,22 @@ class CatalogManagementController extends Controller
     {
         $category = Category::findOrFail($id);
 
+        // Hanya tolak jika masih dipakai oleh produk AKTIF
         if (Product::where('category_id', $category->id)->exists()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Kategori tidak dapat dihapus karena masih digunakan oleh produk.',
+                'message' => 'Kategori tidak dapat dihapus karena masih digunakan oleh produk aktif.',
             ], 400);
         }
 
-        $category->delete();
+        DB::transaction(function () use ($category) {
+            // Lepaskan relasi dari produk yang sudah terhapus (soft-deleted)
+            Product::onlyTrashed()
+                ->where('category_id', $category->id)
+                ->update(['category_id' => null]);
+
+            $category->delete();
+        });
 
         return response()->json([
             'success' => true,
@@ -163,10 +171,10 @@ class CatalogManagementController extends Controller
     {
         $unit = Unit::findOrFail($id);
 
-        if (ProductVariant::where('base_unit_id', $unit->id)->exists()) {
+        if (ProductVariant::withTrashed()->where('base_unit_id', $unit->id)->exists()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Satuan tidak dapat dihapus karena masih digunakan oleh produk.',
+                'message' => 'Satuan tidak dapat dihapus karena masih digunakan oleh produk (termasuk riwayat produk terhapus).',
             ], 400);
         }
 
@@ -326,6 +334,8 @@ class CatalogManagementController extends Controller
                     'is_active' => $request->input('is_active', $product->is_active),
                 ]);
 
+                $keptVariantIds = [];
+
                 foreach ($request->input('variants') as $v) {
                     $variantId = $v['id'] ?? null;
                     $sku = trim($v['sku']);
@@ -365,6 +375,8 @@ class CatalogManagementController extends Controller
                         ]);
                     }
 
+                    $keptVariantIds[] = $variant->id;
+
                     // Sinkronisasi barcode utama (jika diisi)
                     $barcode = isset($v['barcode']) ? trim((string) $v['barcode']) : '';
                     if ($barcode !== '') {
@@ -377,8 +389,8 @@ class CatalogManagementController extends Controller
                             throw new \Exception("Barcode '{$barcode}' sudah digunakan oleh produk lain.");
                         }
 
-                        $firstBarcode = $variant->barcodes()->first();
                         /** @var VariantBarcode|null $firstBarcode */
+                        $firstBarcode = $variant->barcodes()->first();
                         if ($firstBarcode) {
                             $firstBarcode->update([
                                 'unit_id' => $variant->base_unit_id,
@@ -393,6 +405,9 @@ class CatalogManagementController extends Controller
                         }
                     }
                 }
+
+                // soft-delete varian lama yang dihapus dari form
+                $product->variants()->whereNotIn('id', $keptVariantIds)->delete();
 
                 return $product->fresh(['category', 'variants.baseUnit', 'variants.barcodes']);
             });

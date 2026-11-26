@@ -784,7 +784,7 @@ export function CatalogPage() {
                       <span className="text-[11px] font-semibold text-slate-500">
                         Varian #{idx + 1}
                       </span>
-                      {variants.length > 1 && !v.id && (
+                      {variants.length > 1 && (
                         <button
                           type="button"
                           onClick={() => removeVariantRow(idx)}
