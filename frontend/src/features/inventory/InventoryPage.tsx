@@ -856,6 +856,13 @@ export function InventoryPage() {
                   </button>
                 </div>
 
+                <div className="grid grid-cols-12 gap-2 px-3 text-[11px] font-medium text-slate-400">
+                  <span className="col-span-6">Produk / Varian</span>
+                  <span className="col-span-2">Qty</span>
+                  <span className="col-span-3">Harga Beli (Rp)</span>
+                  <span className="col-span-1" />
+                </div>
+
                 {grItems.map((row, idx) => (
                   <div
                     key={idx}
@@ -981,6 +988,13 @@ export function InventoryPage() {
                   >
                     + Tambah Item
                   </button>
+                </div>
+
+                <div className="grid grid-cols-12 gap-2 px-3 text-[11px] font-medium text-slate-400">
+                  <span className="col-span-5">Produk / Varian</span>
+                  <span className="col-span-2">Stok Fisik</span>
+                  <span className="col-span-4">Alasan Selisih</span>
+                  <span className="col-span-1" />
                 </div>
 
                 {opnameItems.map((row, idx) => (
