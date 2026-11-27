@@ -23,7 +23,7 @@ class GoodsReceiptController extends Controller
         $tenantId = $request->user()->tenant_id;
         $outletId = $request->query('outlet_id');
 
-        $receipts = GoodsReceipt::with(['supplier', 'user', 'items.variant'])
+        $receipts = GoodsReceipt::with(['supplier', 'user', 'items.variant.product'])
             ->where('tenant_id', $tenantId)
             ->when($outletId, fn ($q) => $q->where('outlet_id', $outletId))
             ->orderByDesc('id')
