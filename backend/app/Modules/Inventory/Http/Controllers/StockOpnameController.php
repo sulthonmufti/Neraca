@@ -23,7 +23,12 @@ class StockOpnameController extends Controller
         $tenantId = $request->user()->tenant_id;
         $outletId = $request->query('outlet_id');
 
-        $opnames = StockOpname::with(['user', 'outlet', 'items.variant'])
+        $opnames = StockOpname::with([
+                'user',
+                'outlet',
+                'items.variant' => fn ($q) => $q->withTrashed(),
+                'items.variant.product' => fn ($q) => $q->withTrashed(),
+            ])
             ->where('tenant_id', $tenantId)
             ->when($outletId, fn ($q) => $q->where('outlet_id', $outletId))
             ->orderByDesc('id')
