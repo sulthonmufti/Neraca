@@ -7,6 +7,8 @@ import {
   Boxes,
   ClipboardCheck,
   Loader2,
+  PackagePlus,
+  PackageX,
   Plus,
   Search,
   Trash2,
@@ -110,7 +112,7 @@ export function InventoryPage() {
     'stocks'
   );
   const [search, setSearch] = useState('');
-  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'empty'>('all');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Edit Reorder Point
@@ -140,12 +142,12 @@ export function InventoryPage() {
     { variant_id: string; physical_qty: string; reason: string }[]
   >([]);
 
-  // 1. Queries
+  // 1. Queries (ambil semua stok outlet agar angka kartu KPI selalu akurat)
   const { data: stocks = [], isLoading: loadingStocks } = useQuery<StockLevel[]>({
-    queryKey: ['inventory-stocks', outletId, lowStockOnly],
+    queryKey: ['inventory-stocks', outletId],
     queryFn: async () => {
       const res = await api.get('/inventory/stocks', {
-        params: { outlet_id: outletId, low_stock: lowStockOnly || undefined },
+        params: { outlet_id: outletId },
       });
       return res.data?.data ?? [];
     },
@@ -179,7 +181,6 @@ export function InventoryPage() {
     },
   });
 
-  // Daftar semua varian produk (untuk pilihan dropdown Barang Masuk & Opname)
   const { data: catalogProducts = [] } = useQuery<CatalogProduct[]>({
     queryKey: ['catalog-products-for-inventory'],
     queryFn: async () => {
@@ -200,16 +201,30 @@ export function InventoryPage() {
     );
   }, [catalogProducts]);
 
+  // Hitung KPI Stok
+  const kpiStats = useMemo(() => {
+    const total = stocks.length;
+    const low = stocks.filter((s) => Number(s.qty) <= Number(s.reorder_point)).length;
+    const empty = stocks.filter((s) => Number(s.qty) <= 0).length;
+    return { total, low, empty };
+  }, [stocks]);
+
   const filteredStocks = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return stocks;
     return stocks.filter((s) => {
+      const qty = Number(s.qty);
+      const reorder = Number(s.reorder_point);
+
+      if (stockFilter === 'low' && qty > reorder) return false;
+      if (stockFilter === 'empty' && qty > 0) return false;
+
+      if (!q) return true;
       const prodName = s.variant?.product?.name?.toLowerCase() ?? '';
       const varName = s.variant?.name?.toLowerCase() ?? '';
       const sku = s.variant?.sku?.toLowerCase() ?? '';
       return prodName.includes(q) || varName.includes(q) || sku.includes(q);
     });
-  }, [stocks, search]);
+  }, [stocks, search, stockFilter]);
 
   // 2. Mutations
   const updateReorderMutation = useMutation({
@@ -309,21 +324,25 @@ export function InventoryPage() {
     },
   });
 
-  // Helpers Modal Goods Receipt
-  const openGrModal = () => {
+  // Helpers Modal Goods Receipt (mendukung pre-select dari tombol Restock)
+  const openGrModal = (preselectedVariantId?: number) => {
     setErrorMsg(null);
     setGrSupplierId(suppliers[0]?.id ? String(suppliers[0].id) : '');
     setGrInvoiceNo('');
     setGrNote('');
-    const first = allVariants[0];
+
+    const target = preselectedVariantId
+      ? allVariants.find((v) => v.id === preselectedVariantId) ?? allVariants[0]
+      : allVariants[0];
+
     setGrItems(
-      first
+      target
         ? [
             {
-              variant_id: String(first.id),
-              unit_id: String(first.base_unit_id),
+              variant_id: String(target.id),
+              unit_id: String(target.base_unit_id),
               qty: '1',
-              unit_cost: String(first.cost_price),
+              unit_cost: String(target.cost_price),
             },
           ]
         : []
@@ -411,6 +430,75 @@ export function InventoryPage() {
         </div>
       </div>
 
+      {/* 3 Kartu Ringkasan (Bento KPI) Interaktif */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('stocks');
+            setStockFilter('all');
+          }}
+          className={`text-left bg-white rounded-[24px] p-5 shadow-[0_4px_24px_rgba(20,20,40,0.03)] border transition cursor-pointer ${
+            activeTab === 'stocks' && stockFilter === 'all'
+              ? 'border-[#1c1c1e]'
+              : 'border-transparent hover:border-slate-200'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-400">Total Varian Terlacak</span>
+            <div className="w-9 h-9 rounded-xl bg-[#F5F6FA] text-[#1c1c1e] flex items-center justify-center">
+              <Boxes className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-[#1c1c1e] mt-2">{kpiStats.total}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Klik untuk tampilkan semua stok</div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('stocks');
+            setStockFilter('low');
+          }}
+          className={`text-left bg-white rounded-[24px] p-5 shadow-[0_4px_24px_rgba(20,20,40,0.03)] border transition cursor-pointer ${
+            activeTab === 'stocks' && stockFilter === 'low'
+              ? 'border-amber-500'
+              : 'border-transparent hover:border-amber-200'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-400">Stok Menipis (≤ Batas Min)</span>
+            <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+              <AlertTriangle className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-amber-600 mt-2">{kpiStats.low}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Klik untuk filter barang perlu restock</div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('stocks');
+            setStockFilter('empty');
+          }}
+          className={`text-left bg-white rounded-[24px] p-5 shadow-[0_4px_24px_rgba(20,20,40,0.03)] border transition cursor-pointer ${
+            activeTab === 'stocks' && stockFilter === 'empty'
+              ? 'border-rose-500'
+              : 'border-transparent hover:border-rose-200'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-400">Stok Habis (0)</span>
+            <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+              <PackageX className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-rose-600 mt-2">{kpiStats.empty}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Klik untuk filter barang kosong</div>
+        </button>
+      </div>
+
       {errorMsg && (
         <div className="p-4 rounded-2xl bg-rose-50 text-rose-600 text-xs flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0" />
@@ -433,15 +521,26 @@ export function InventoryPage() {
               />
             </div>
 
-            <label className="flex items-center gap-2 px-4 h-11 rounded-xl bg-[#F5F6FA] text-xs font-medium text-slate-700 cursor-pointer shrink-0">
-              <input
-                type="checkbox"
-                checked={lowStockOnly}
-                onChange={(e) => setLowStockOnly(e.target.checked)}
-                className="rounded accent-[#1c1c1e]"
-              />
-              Hanya Stok Menipis
-            </label>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <select
+                value={stockFilter}
+                onChange={(e) => setStockFilter(e.target.value as 'all' | 'low' | 'empty')}
+                className="h-11 px-4 rounded-xl bg-[#F5F6FA] text-xs font-medium text-[#1c1c1e] focus:outline-none focus:ring-2 focus:ring-[#8b7fd0]"
+              >
+                <option value="all">Semua Status Stok</option>
+                <option value="low">Hanya Stok Menipis</option>
+                <option value="empty">Hanya Stok Habis (0)</option>
+              </select>
+
+              <button
+                type="button"
+                onClick={() => openGrModal()}
+                className="h-11 px-4 rounded-xl bg-[#1c1c1e] hover:bg-black text-white text-xs font-medium flex items-center gap-1.5 shrink-0 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                Barang Masuk
+              </button>
+            </div>
           </div>
 
           <div className="bg-white rounded-[24px] p-5 shadow-[0_4px_24px_rgba(20,20,40,0.03)] overflow-x-auto">
@@ -451,7 +550,7 @@ export function InventoryPage() {
               </div>
             ) : filteredStocks.length === 0 ? (
               <div className="text-center py-12 text-slate-400 text-sm">
-                Belum ada data stok. Input <b>Barang Masuk</b> untuk mulai mencatat stok.
+                Tidak ada data stok yang sesuai filter.
               </div>
             ) : (
               <table className="w-full text-left border-collapse">
@@ -467,7 +566,9 @@ export function InventoryPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
                   {filteredStocks.map((s) => {
-                    const isLow = Number(s.qty) <= Number(s.reorder_point);
+                    const qty = Number(s.qty);
+                    const isEmpty = qty <= 0;
+                    const isLow = qty <= Number(s.reorder_point);
                     return (
                       <tr key={s.id} className="hover:bg-[#F5F6FA]/60 transition">
                         <td className="py-3.5 px-3">
@@ -479,15 +580,17 @@ export function InventoryPage() {
                         <td className="py-3.5 px-3 font-mono text-xs text-slate-600">
                           {s.variant?.sku ?? '-'}
                         </td>
-                        <td className="py-3.5 px-3 text-right font-bold text-[#1c1c1e]">
-                          {Number(s.qty)}
-                        </td>
+                        <td className="py-3.5 px-3 text-right font-bold text-[#1c1c1e]">{qty}</td>
                         <td className="py-3.5 px-3 text-right text-slate-500">
                           {Number(s.reorder_point)}
                         </td>
                         <td className="py-3.5 px-3 text-center">
-                          {isLow ? (
+                          {isEmpty ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-600 text-[11px] font-medium">
+                              Habis
+                            </span>
+                          ) : isLow ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-[11px] font-medium">
                               <AlertTriangle className="w-3 h-3" /> Menipis
                             </span>
                           ) : (
@@ -497,16 +600,27 @@ export function InventoryPage() {
                           )}
                         </td>
                         <td className="py-3.5 px-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingReorder(s);
-                              setReorderInput(String(s.reorder_point));
-                            }}
-                            className="px-3 h-8 rounded-xl bg-[#F5F6FA] hover:bg-slate-200 text-xs font-medium text-[#1c1c1e] cursor-pointer"
-                          >
-                            Atur Batas
-                          </button>
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openGrModal(s.variant_id)}
+                              className="px-3 h-8 rounded-xl bg-[#1c1c1e] hover:bg-black text-white text-xs font-medium inline-flex items-center gap-1 cursor-pointer"
+                              title="Catat barang masuk untuk produk ini"
+                            >
+                              <PackagePlus className="w-3.5 h-3.5" />
+                              Restock
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingReorder(s);
+                                setReorderInput(String(s.reorder_point));
+                              }}
+                              className="px-3 h-8 rounded-xl bg-[#F5F6FA] hover:bg-slate-200 text-xs font-medium text-[#1c1c1e] cursor-pointer"
+                            >
+                              Atur Batas
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -524,7 +638,7 @@ export function InventoryPage() {
           <div className="flex justify-end">
             <button
               type="button"
-              onClick={openGrModal}
+              onClick={() => openGrModal()}
               className="h-11 px-5 rounded-xl bg-[#1c1c1e] hover:bg-black text-white text-sm font-medium flex items-center gap-2 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
@@ -820,7 +934,7 @@ export function InventoryPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1">
-                    No. Faktur Supplier
+                    No. Faktur Supplier (Opsional)
                   </label>
                   <input
                     type="text"
@@ -832,7 +946,7 @@ export function InventoryPage() {
                 </div>
               </div>
 
-              <div className="space-y-2.5 max-h-64 overflow-y-auto">
+              <div className="space-y-2 max-h-64 overflow-y-auto">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-[#1c1c1e]">Daftar Barang</span>
                   <button
@@ -856,9 +970,10 @@ export function InventoryPage() {
                   </button>
                 </div>
 
+                {/* Label Kolom */}
                 <div className="grid grid-cols-12 gap-2 px-3 text-[11px] font-medium text-slate-400">
                   <span className="col-span-6">Produk / Varian</span>
-                  <span className="col-span-2">Qty</span>
+                  <span className="col-span-2">Qty Masuk</span>
                   <span className="col-span-3">Harga Beli (Rp)</span>
                   <span className="col-span-1" />
                 </div>
@@ -969,7 +1084,7 @@ export function InventoryPage() {
               }}
               className="space-y-4"
             >
-              <div className="space-y-2.5 max-h-64 overflow-y-auto">
+              <div className="space-y-2 max-h-64 overflow-y-auto">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-[#1c1c1e]">
                     Hasil Hitung Fisik Gudang
@@ -990,6 +1105,7 @@ export function InventoryPage() {
                   </button>
                 </div>
 
+                {/* Label Kolom */}
                 <div className="grid grid-cols-12 gap-2 px-3 text-[11px] font-medium text-slate-400">
                   <span className="col-span-5">Produk / Varian</span>
                   <span className="col-span-2">Stok Fisik</span>
