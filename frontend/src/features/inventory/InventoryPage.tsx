@@ -62,7 +62,7 @@ interface GoodsReceipt {
     variant_id: number;
     qty: number;
     unit_cost: number;
-    variant?: { sku: string; name: string };
+    variant?: { sku: string; name: string; product?: { name: string } };
   }[];
 }
 
@@ -79,7 +79,7 @@ interface StockOpname {
     physical_qty: number;
     diff_qty?: number;
     reason: string | null;
-    variant?: { sku: string; name: string };
+    variant?: { sku: string; name: string; product?: { name: string } };
   }[];
 }
 
@@ -335,13 +335,23 @@ export function InventoryPage() {
       ? allVariants.find((v) => v.id === preselectedVariantId) ?? allVariants[0]
       : allVariants[0];
 
+    // Cari data stok & batas minimum untuk varian yang dipilih
+    const stockInfo = target
+      ? stocks.find((s) => s.variant_id === target.id)
+      : undefined;
+
+    // Default Qty: ikuti batas minimum (minimal 1 jika batas min = 0)
+    const suggestedQty = stockInfo && Number(stockInfo.reorder_point) > 0
+      ? Math.max(1, Number(stockInfo.reorder_point))
+      : 1;
+
     setGrItems(
       target
         ? [
             {
               variant_id: String(target.id),
               unit_id: String(target.base_unit_id),
-              qty: '1',
+              qty: String(suggestedQty),
               unit_cost: String(target.cost_price),
             },
           ]
@@ -670,8 +680,8 @@ export function InventoryPage() {
                       0
                     );
                     return (
-                      <tr key={r.id}>
-                        <td className="py-3.5 px-3 text-xs text-slate-500">
+                      <tr key={r.id} className="align-top hover:bg-[#F5F6FA]/50">
+                        <td className="py-3.5 px-3 text-xs text-slate-500 whitespace-nowrap">
                           {new Date(r.received_at).toLocaleString('id-ID')}
                         </td>
                         <td className="py-3.5 px-3">
@@ -679,20 +689,40 @@ export function InventoryPage() {
                             {r.supplier?.name ?? 'Tanpa Supplier'}
                           </div>
                           <div className="text-xs text-slate-400">
-                            {r.supplier_invoice_no || r.receipt_no || `#GR-${r.id}`}
+                            Faktur: {r.supplier_invoice_no || r.receipt_no || `#GR-${r.id}`}
+                          </div>
+                          {r.note && (
+                            <div className="mt-1.5 inline-block px-2 py-0.5 rounded-lg bg-[#F5F6FA] text-[11px] text-slate-600">
+                              Catatan: {r.note}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-3">
+                          <div className="space-y-1.5">
+                            {r.items.map((it) => (
+                              <div
+                                key={it.id}
+                                className="flex flex-wrap items-center justify-between gap-2 bg-[#F5F6FA] px-3 py-1.5 rounded-xl text-xs"
+                              >
+                                <div>
+                                  <span className="font-semibold text-[#1c1c1e]">
+                                    {it.variant?.product?.name ?? 'Produk'}
+                                  </span>
+                                  {it.variant?.name && (
+                                    <span className="text-slate-500"> · {it.variant.name}</span>
+                                  )}
+                                  <span className="ml-1.5 text-[10px] font-mono text-slate-400">
+                                    ({it.variant?.sku ?? '-'})
+                                  </span>
+                                </div>
+                                <div className="text-slate-600 font-medium">
+                                  {Number(it.qty)} pcs × {formatRp(Number(it.unit_cost))}
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </td>
-                        <td className="py-3.5 px-3 text-xs space-y-1">
-                          {r.items.map((it) => (
-                            <div key={it.id}>
-                              <span className="font-medium text-[#1c1c1e]">
-                                {it.variant?.sku ?? '-'}
-                              </span>{' '}
-                              — {Number(it.qty)} x {formatRp(Number(it.unit_cost))}
-                            </div>
-                          ))}
-                        </td>
-                        <td className="py-3.5 px-3 text-right font-bold text-[#7c6fd6]">
+                        <td className="py-3.5 px-3 text-right font-bold text-[#7c6fd6] whitespace-nowrap">
                           {formatRp(r.total_cost ?? total)}
                         </td>
                       </tr>
@@ -730,36 +760,73 @@ export function InventoryPage() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-100 text-[11px] uppercase tracking-wider text-slate-400">
-                    <th className="py-3 px-3">Tanggal</th>
-                    <th className="py-3 px-3">Petugas & Catatan</th>
-                    <th className="py-3 px-3">Penyesuaian Item</th>
+                    <th className="py-3 px-3">Tanggal & Ref</th>
+                    <th className="py-3 px-3">Produk & Varian</th>
+                    <th className="py-3 px-3 text-right">Sistem → Fisik</th>
+                    <th className="py-3 px-3 text-center">Selisih</th>
+                    <th className="py-3 px-3">Alasan & Petugas</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
-                  {opnames.map((op) => (
-                    <tr key={op.id}>
-                      <td className="py-3.5 px-3 text-xs text-slate-500">
-                        {new Date(op.opname_at).toLocaleString('id-ID')}
-                      </td>
-                      <td className="py-3.5 px-3">
-                        <div className="font-semibold text-[#1c1c1e]">
-                          {op.user?.name ?? 'Admin'}
-                        </div>
-                        <div className="text-xs text-slate-400">{op.note || '-'}</div>
-                      </td>
-                      <td className="py-3.5 px-3 text-xs space-y-1">
-                        {op.items.map((it) => (
-                          <div key={it.id}>
-                            <span className="font-medium text-[#1c1c1e]">
-                              {it.variant?.sku ?? '-'}
-                            </span>{' '}
-                            → Fisik: <b>{Number(it.physical_qty)}</b>
-                            {it.reason && <span className="text-slate-400"> ({it.reason})</span>}
-                          </div>
-                        ))}
-                      </td>
-                    </tr>
-                  ))}
+                  {opnames.flatMap((op) =>
+                    op.items.map((it) => {
+                      const sysQty = Number(it.system_qty ?? 0);
+                      const physQty = Number(it.physical_qty ?? 0);
+                      const diff =
+                        it.diff_qty !== undefined ? Number(it.diff_qty) : physQty - sysQty;
+
+                      return (
+                        <tr key={`${op.id}-${it.id}`} className="hover:bg-[#F5F6FA]/60 transition">
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            <div className="text-xs font-semibold text-[#1c1c1e]">
+                              {op.opname_no || `#OP-${op.id}`}
+                            </div>
+                            <div className="text-[11px] text-slate-400">
+                              {new Date(op.opname_at).toLocaleString('id-ID', {
+                                dateStyle: 'short',
+                                timeStyle: 'short',
+                              })}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="font-semibold text-xs text-[#1c1c1e]">
+                              {it.variant?.product?.name ?? 'Produk'}
+                            </div>
+                            <div className="text-[11px] text-slate-400">
+                              {it.variant?.name ?? '-'} ·{' '}
+                              <span className="font-mono">{it.variant?.sku ?? '-'}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 text-right whitespace-nowrap text-xs">
+                            <span className="text-slate-400">{sysQty}</span>
+                            <span className="mx-1.5 text-slate-300">→</span>
+                            <span className="font-bold text-[#1c1c1e]">{physQty}</span>
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                                diff > 0
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : diff < 0
+                                  ? 'bg-rose-50 text-rose-600'
+                                  : 'bg-slate-100 text-slate-500'
+                              }`}
+                            >
+                              {diff > 0 ? `+${diff}` : diff}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="text-xs text-slate-700">
+                              {it.reason || op.note || '-'}
+                            </div>
+                            <div className="text-[11px] text-slate-400">
+                              Oleh: {op.user?.name ?? 'Admin'}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             )}
